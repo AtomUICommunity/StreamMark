@@ -77,3 +77,7 @@
   - **无障碍**：Avalonia 12 没有公开的 `TextPattern`，读屏只能读到名称；标题通过 `AutomationProperties.HeadingLevel` 提供级别。
   - **键盘选区**：Shift+↑/↓ 用字符框上下方的探测点按坐标命中，探测距离逐步加大，以跨过块之间的间距。
   - **修正**：Markdig 中脚注组的区间从文档开头算起，曾使 `FootnotesBlock` 的 key 为 0，与第一个块重复；现在取其中脚注的区间。
+- **Gallery 改为 Markdown 编辑器（2026-10-19）**：左侧源码编辑、右侧 StreamMark 实时预览，另保留原来的会话演示页；设计与能力清单见 [gallery.md](gallery.md)。
+  - **源码编辑器用 AvaloniaEdit 12.0.0 + AvaloniaEdit.TextMate**，只有 Gallery 引用，库的依赖不变。上表否决 AvaloniaEdit 指的是「每个代码块一个编辑器」，与此不冲突。NativeAOT 发布实测 0 个 IL 警告；它的样式必须在 `App.axaml` 里用 `StyleInclude` 编译期引入，代码里 `new StyleInclude(uri)` 会产生 IL2026。
+  - **预览用 `MarkdownView.Document` + `StreamingDocument.Load`，不用 `Markdown` 属性**：给 `Markdown` 赋值会清空全部块视图与块状态，逐键输入时整篇重建；`Load` 走快照差异，编辑点之前的块视图原样保留。编辑点之后的块因 key（源码偏移）平移而重建，公式与图表有内容缓存，可以接受。换文件时换一个新的 `StreamingDocument`，让块状态随之清空。
+  - **预发布**：`.github/workflows/release-gallery.yml` 在 6 个桌面 RID 的原生 runner 上 NativeAOT 发布、冒烟、打包（`tools/package-gallery.sh`；macOS 为 ad-hoc 签名、未公证的 `.app`），再建 GitHub 预发布。

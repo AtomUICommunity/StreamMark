@@ -10,6 +10,8 @@
         <PackageReference Include="Avalonia.Desktop" />
         <PackageReference Include="Avalonia.Themes.Fluent" />
         <PackageReference Include="Avalonia.Headless" />
+        <PackageReference Include="Avalonia.AvaloniaEdit" />
+        <PackageReference Include="AvaloniaEdit.TextMate" />
     </ItemGroup>
     <ItemGroup>
         <EmbeddedResource Include="Samples\*.md" LogicalName="Samples.%(Filename)%(Extension)" />

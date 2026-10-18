@@ -1,0 +1,138 @@
+name: Release Gallery
+
+# 发布 Gallery（Markdown 编辑器演示）的测试版：6 个桌面 RID 各自 NativeAOT 发布、冒烟、打包，
+# 然后建一个 GitHub 预发布。打 tag gallery-v<version> 触发，或手动运行并填写版本号。
+on:
+  push:
+    tags: ['gallery-v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version, e.g. 0.1.0-preview.1 (tag gallery-v<version> is created on the selected ref)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            version="${{ inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME#gallery-v}"
+          fi
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]] || { echo "::error::bad version '$version'"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  native-ratex:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: win-x64,     os: windows-latest }
+          - { rid: win-arm64,   os: windows-11-arm }
+          - { rid: linux-x64,   os: ubuntu-latest }
+          - { rid: linux-arm64, os: ubuntu-24.04-arm }
+          - { rid: osx-x64,     os: macos-15-intel }
+          - { rid: osx-arm64,   os: macos-latest }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/ratex -> ../../artifacts/cargo
+      - name: Build (Unix)
+        if: runner.os != 'Windows'
+        run: ./native/build.sh ${{ matrix.rid }}
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./native/build.ps1 -Rid ${{ matrix.rid }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ratex-${{ matrix.rid }}
+          path: artifacts/native/${{ matrix.rid }}/
+          if-no-files-found: error
+
+  gallery:
+    needs: [version, native-ratex]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: win-x64,     os: windows-latest }
+          - { rid: win-arm64,   os: windows-11-arm }
+          - { rid: linux-x64,   os: ubuntu-latest }
+          - { rid: linux-arm64, os: ubuntu-24.04-arm }
+          - { rid: osx-x64,     os: macos-15-intel }
+          - { rid: osx-arm64,   os: macos-latest }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/download-artifact@v4
+        with:
+          name: ratex-${{ matrix.rid }}
+          path: artifacts/native/${{ matrix.rid }}
+      - name: Publish (NativeAOT, 0 IL warnings)
+        shell: bash
+        run: |
+          dotnet publish samples/StreamMark.Gallery -c Release -r ${{ matrix.rid }} -o artifacts/gallery/${{ matrix.rid }} \
+            -p:Version=${{ needs.version.outputs.version }} 2>&1 | tee publish.log
+          if grep -E "warning IL[0-9]+" publish.log; then
+            echo "::error::NativeAOT publish produced IL warnings"
+            exit 1
+          fi
+          cp artifacts/native/${{ matrix.rid }}/* artifacts/gallery/${{ matrix.rid }}/
+      - name: Smoke
+        shell: bash
+        run: ./artifacts/gallery/${{ matrix.rid }}/StreamMark.Gallery --smoke
+      - name: Package
+        shell: bash
+        run: tools/package-gallery.sh ${{ matrix.rid }} ${{ needs.version.outputs.version }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gallery-${{ matrix.rid }}
+          path: artifacts/release/
+          if-no-files-found: error
+
+  release:
+    needs: [version, gallery]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: gallery-*
+          path: dist
+          merge-multiple: true
+      - name: Create pre-release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${{ needs.version.outputs.version }}"
+          tag="gallery-v$version"
+          (cd dist && sha256sum -- * > SHA256SUMS.txt)
+          sed -e "s/@VERSION@/$version/g" -e "s/@SHA@/${GITHUB_SHA::7}/g" samples/StreamMark.Gallery/Packaging/release-notes.md > notes.md
+          gh release create "$tag" dist/* --prerelease --target "$GITHUB_SHA" \
+            --title "StreamMark Gallery $version" --notes-file notes.md

@@ -21,6 +21,8 @@ StreamMark：面向 AI 对话场景的流式 Markdown 渲染库，Avalonia 12 / 
 | 打包本地 NuGet | `tools/pack-local.sh <version>` | 产出 `artifacts/packages/*.nupkg`；重新打包必须升版本号 |
 | 基准 | `dotnet run -c Release --project bench/StreamMark.Benchmarks -- --filter '*'` | ShortRun，只看量级；结果记录在 [docs/benchmarks.md](docs/benchmarks.md) |
 | 流式 CPU 基准（真实窗口） | `tools/cpu-bench.sh [rid]` | NativeAOT 发布 `bench/StreamMark.CpuHarness` 并依次跑场景矩阵，结果追加到 `artifacts/cpu-bench.txt`；会打开窗口，运行期间保持可见。改动渲染、排版、节奏或会话面板后跑一次并与 [docs/benchmarks.md](docs/benchmarks.md) 对比 |
+| Gallery 打包 | AOT 冒烟那条命令发布到 `-o artifacts/gallery/<rid>` 并复制原生库后，`tools/package-gallery.sh <rid> <version>` | 产出 `artifacts/release/StreamMark.Gallery-<version>-<rid>.{zip,tar.gz}`；macOS 为 ad-hoc 签名的 `.app`（2026-10-19 在 osx-arm64 实测：解压后签名校验与 `--smoke` 通过） |
+| Gallery 预发布 | 推送 `gallery-v<version>` 标签，或手动运行 `Release Gallery` 工作流并填写版本号 | `.github/workflows/release-gallery.yml`：6 个 RID 发布（0 IL 警告）+ `--smoke` + 打包，最后建 GitHub 预发布；说明模板 `samples/StreamMark.Gallery/Packaging/release-notes.md` |
 | 测试截图 | 图片写到 `STREAMMARK_SNAPSHOT_DIR`，未设置时用测试输出目录下的 `snapshots/` | 只用于人工查看，没有基线比对 |
 
 ## 架构与边界
