@@ -2,7 +2,7 @@
 name: fallback-font-position-history
 description: Windows CI 上 IncrementalLayoutTests 失败的原因：回退字体曾依赖取 run 的起点与 Avalonia 的匹配历史
 type: project
-updated: 2026-10-17
+updated: 2026-10-18
 source: session
 evidence: [src/StreamMark.Avalonia/Rendering/TextSegmentView.cs:MatchFallback, tests/StreamMark.Avalonia.Tests/Rendering/IncrementalLayoutTests.cs:StreamedMixedScripts_MatchFullLayout]
 ---
@@ -10,3 +10,5 @@ alpha.16 引入逐行排版后，`StreamedLineBreaks_MatchFullLayout_AtEveryStep
 
 **Why:** 只在一个平台出现的断行差异，根因在字体回退而不在 `SegmentLayout`；韩文与汉字连写的文本能在 macOS 上稳定复现，不必等 Windows CI。
 **How to apply:** 改动 `InlineTextSource` 的 run 切分或回退字体时，保证同一段文字无论从哪个位置开始取、何时取，都得到同一字体；跑 `IncrementalLayoutTests`。
+
+2026-10-18 补充：按字缓存会固定 Avalonia 某一刻的偶然结果。PR #2 的 CI 上，`InlineStyles_Render` 按字重探测 `GlyphTypeface` 把"Yu Gothic UI Semibold"加载进了 Avalonia 的缓存，之后"斜"被固定到这个族，渲染成 Yu Gothic Bold + 合成斜体（`3b192e6` 去掉了探测）。曾考虑直接调用系统回退（`IFontManagerImpl.TryMatchCharacter`），但 Avalonia 的引用程序集剥掉了 `AvaloniaLocator.Current` 等私有 API，编译不过；按文字类别的确定回退表被搁置，维持现状。

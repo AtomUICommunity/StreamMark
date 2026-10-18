@@ -126,7 +126,7 @@ public sealed class IncrementalLayoutTests(ITestOutputHelper output)
             view.ApplyLatest();
             await HeadlessApp.Settle(1);
 
-            var segment = Segment(view);
+            var segment = await SettledSegment(view);
             Assert.True(segment.IsDocumentTail);
             Assert.NotNull(ElementComposition.GetElementChildVisual(segment));
             Assert.Contains(Lines(segment), l => l.ClipRight is not null);
@@ -153,7 +153,7 @@ public sealed class IncrementalLayoutTests(ITestOutputHelper output)
         await stream.Document.WhenIdle();
         view.ApplyLatest();
         await HeadlessApp.Settle(1);
-        var segment = Segment(view);
+        var segment = await SettledSegment(view);
         var samples = new List<double>();
         for (var i = 0; i < 40; i++)
         {
@@ -177,7 +177,7 @@ public sealed class IncrementalLayoutTests(ITestOutputHelper output)
     private static TextSegmentView Segment(Control view) => view.GetVisualDescendants().OfType<TextSegmentView>().Last();
 
     /// <summary>
-    /// 等到文本片段出现再取：进程里第一个测试冷启动时（CI 的 x64 Linux），一帧之内块视图可能还没建好。
+    /// 等到文本片段出现再取：进程里第一个测试冷启动时（CI 的 x64 Linux / Windows），一帧之内块视图可能还没建好。
     /// </summary>
     private static async Task<TextSegmentView> SettledSegment(Control view)
     {
