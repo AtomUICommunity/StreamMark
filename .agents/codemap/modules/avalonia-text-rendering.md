@@ -37,7 +37,7 @@ updated: 2026-10-16
 | `CodeBlockState` | `src/StreamMark.Avalonia/Rendering/CodeBlockState.cs:11` | 块共享状态：代码、行起点、增量高亮会话；`For(context, blockKey, language)`（:48）从 `BlockStateStore` 取，语言 / 高亮器 / 明暗变化时重建 |
 | `TableBlockView` | `src/StreamMark.Avalonia/Rendering/TableBlockView.cs:17` | 自定义列宽布局（不用 `Grid`），列宽自然宽度 → 按比例收缩 → 横向滚动；悬停显示“复制为 Markdown” |
 | `MathBlockView` | `src/StreamMark.Avalonia/Rendering/MathBlockView.cs:15` | 块级公式，`ISelectableSegment` 自身即片段；排版失败时保留上一次成功结果，闭合后仍失败则退回源码 |
-| `DiagramBlockView` | `src/StreamMark.Avalonia/Rendering/DiagramBlockView.cs:17` | 图表（如 Mermaid）后台渲染 + 静态 LRU 缓存 + 图表 / 源码切换，渲染前与失败时显示源码 |
+| `DiagramBlockView` | `src/StreamMark.Avalonia/Rendering/DiagramBlockView.cs:17` | 图表（如 Mermaid）后台渲染 + 静态 LRU 缓存 + 图表 / 源码切换，渲染前与失败时显示源码；挂上可视树后才渲染，主题的半透明颜色叠到真实底色上再传给渲染器；图表按宽度适配、高度只受 6000px 安全上限约束 |
 | `HtmlBoxBlockView` + `HtmlPaint` | `src/StreamMark.Avalonia/Rendering/HtmlBoxBlockView.cs:11` / `HtmlPaint.cs:9` | HTML 盒子：外边距 / 边框 / 背景 / 宽度，文字样式经 `RenderContext.WithHtml` 下传；`HtmlPaint` 处理作者颜色的对比度 |
 | `QuoteBlockView` / `AlertBlockView` / `ListBlockView` / `ListItemBlockView` / `FootnotesBlockView` / `DefinitionListBlockView` | `src/StreamMark.Avalonia/Rendering/ContainerViews.cs:12` / `:29` / `:100` / `:201` / `:286` / `:330` | 引用、GitHub 提示块、列表（项目符号按嵌套深度）、列表项（符号 / 复选框与首行基线对齐）、脚注（转成有序 `ListBlock`）、定义列表 |
 | `RenderContext` | `src/StreamMark.Avalonia/Rendering/RenderContext.cs:12` | 一个文档共享的渲染上下文：`Style` / `Services` / `Selection` / `Entry` / `Streaming` / `State` / `ImageBaseUri` / `Inherited` |
@@ -68,7 +68,7 @@ updated: 2026-10-16
 - `MarkdownStyle`（`MarkdownStyle.cs:15`）：不可变样式快照，只读；主题变体、`ResourcesChanged`、`Services` / `ImageBaseUri` 变化时由 `MarkdownView` 置空 `_context` 并重建（`MarkdownView.cs:64`、`:44`、`:172`），是宿主资源的**派生副本**，不反向写回。
 - `StreamingState`（`StreamingState.cs:7`）：渐显时间队列（加锁），由 `MarkdownStream` 在界面线程写入（`MarkdownStream.cs:52`、`:99`），由文档末尾片段读取；`MarkdownStream.Complete` 时 `Document.Complete()` 并 `IsActive = false`（`MarkdownStream.cs:114`）。
 - `CodeBlockState`（`CodeBlockState.cs:11`）：代码、行起点索引、高亮会话与结果，存在 `BlockStateStore`（键 `"code.state"`，`CodeBlockState.cs:52`），进程内后台任务计算、界面线程发布（:142）；视图回收重建、长代码分段都复用它。`BlockStateStore` 还保存 `code.wrap`（`CodeBlockView.cs:26`）与 `diagram.code`（`DiagramBlockView.cs:43`）。
-- 静态缓存：`DiagramCache`（`DiagramBlockView.cs:250`，32 项 LRU，键 = 语言 + 明暗 + 代码）、`BrushCache`（`CodeBlockView.cs:621`，按 ARGB）、`HtmlPaint.s_brushes`（`HtmlPaint.cs:11`，按 `CssColor`）。
+- 静态缓存：`DiagramCache`（`DiagramBlockView.cs`，32 项 LRU，键 = 渲染器身份 + 语言 + 明暗 + 颜色 + 字体 + 代码）、`BrushCache`（`CodeBlockView.cs:621`，按 ARGB）、`HtmlPaint.s_brushes`（`HtmlPaint.cs:11`，按 `CssColor`）。
 - 视图内的图片句柄：`TextSegmentView._images` / `_usedImages`（`TextSegmentView.cs:369` / `:379`），离开可视树时全部 `Dispose` 并重新排版（:239）。
 - 计时 / 帧状态：`TailFade._settle`（渐显结束后恢复行的完整绘制的一次性定时器）、`MarkdownStream` 的显示帧调度（`SetFrameSource` + 100ms 计时器兜底）、`MarkdownView._frameRequested`（快照就绪合帧，`MarkdownView.cs:140`）、`CodeBlockView._copiedTimer`（复制后的图标回退，:158）、`DiagramBlockView._cts`（取消上一次渲染，:83）。时钟是 `StreamClock.Now`（`InlineRuns.cs:10`，基于 `Stopwatch`）。
 - `MarkdownView._ownDocument`（`MarkdownView.cs:33`）：只设置 `Markdown` 时自建的 `StreamingDocument`，设置 `Stream` / `Document` 时置空。
