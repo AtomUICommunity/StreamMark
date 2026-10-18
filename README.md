@@ -11,14 +11,68 @@ High-performance streaming Markdown rendering for [Avalonia](https://avaloniaui.
 
 ## Packages
 
+Published to nuget.org as `TKCode.StreamMark.*`. Assembly and namespace names stay `StreamMark.*`, so `using StreamMark.Avalonia;` does not change.
+
 | Package | Purpose |
 |---|---|
-| `StreamMark.Core` | Streaming engine: segmenter, remend, block model, snapshots/diff, pacer (no UI dependency) |
-| `StreamMark.Avalonia` | Avalonia controls and default theme |
-| `StreamMark.Highlighting.TextMate` | Incremental syntax highlighting |
-| `StreamMark.RaTeX` | LaTeX math via RaTeX |
-| `StreamMark.Mermaid` | Mermaid diagrams |
-| `StreamMark.Theme.AtomUI` | AtomUI design-token theme |
+| `TKCode.StreamMark.Core` | Streaming engine: segmenter, remend, block model, snapshots/diff, pacer (no UI dependency) |
+| `TKCode.StreamMark.Avalonia` | Avalonia controls and default theme |
+| `TKCode.StreamMark.Highlighting.TextMate` | Incremental syntax highlighting |
+| `TKCode.StreamMark.RaTeX` | LaTeX math via RaTeX (ships the native library for win/linux/osx × x64/arm64) |
+| `TKCode.StreamMark.Mermaid` | Mermaid diagrams |
+| `TKCode.StreamMark.Theme.AtomUI` | AtomUI design-token theme |
+
+## Install
+
+Requires the .NET 10 SDK and Avalonia 12. The smallest useful set is the Avalonia package; add the others for highlighting, math, diagrams or the AtomUI theme.
+
+```bash
+dotnet add package TKCode.StreamMark.Avalonia
+dotnet add package TKCode.StreamMark.Highlighting.TextMate
+dotnet add package TKCode.StreamMark.RaTeX
+dotnet add package TKCode.StreamMark.Mermaid
+dotnet add package TKCode.StreamMark.Theme.AtomUI   # only when the app already uses AtomUI
+```
+
+Or in the project file:
+
+```xml
+<ItemGroup>
+  <PackageReference Include="TKCode.StreamMark.Avalonia" Version="0.1.0-alpha.22" />
+  <PackageReference Include="TKCode.StreamMark.Highlighting.TextMate" Version="0.1.0-alpha.22" />
+  <PackageReference Include="TKCode.StreamMark.RaTeX" Version="0.1.0-alpha.22" />
+  <PackageReference Include="TKCode.StreamMark.Mermaid" Version="0.1.0-alpha.22" />
+</ItemGroup>
+```
+
+`TKCode.StreamMark.Avalonia` brings in `TKCode.StreamMark.Core`. The RaTeX package carries `ratex_ffi` under `runtimes/<rid>/native/`, and the host picks the library for its own RID; nothing has to be copied by hand. Preview versions need the usual prerelease restore (`--prerelease`, which `dotnet add package` does on its own).
+
+Minimal app:
+
+```csharp
+using StreamMark.Avalonia;
+using StreamMark.Avalonia.Extensions;
+using StreamMark.Highlighting.TextMate;
+using StreamMark.Mermaid;
+using StreamMark.RaTeX;
+
+public class App : Application
+{
+    public override void Initialize()
+    {
+        Styles.Add(new StreamMarkTheme());
+        // Styles.Add(new AtomUIMarkdownTheme()); // after the host AtomUI theme
+    }
+}
+
+// in the window
+var services = new MarkdownServices
+{
+    Plugins = [new RaTeXPlugin(), new TextMatePlugin(), new MermaidPlugin()],
+};
+MarkdownServices.SetServices(this, services);
+Content = new MarkdownView { Markdown = "# Hello **StreamMark**\n\n$E = mc^2$" };
+```
 
 ## Avalonia usage
 
