@@ -1149,7 +1149,26 @@ public sealed class TextSegmentView : Control, ISelectableSegment
             {
                 weight = weights.OrderBy(w => Math.Abs(w - (int)requested.Weight)).First();
             }
-            return new Typeface(family, style, (FontWeight)weight, requested.Stretch);
+            var face = new Typeface(family, style, (FontWeight)weight, requested.Stretch);
+            // FamilyTypefaces 列出的字面不一定真能加载：Windows CI 的 Yu Gothic 列出 Italic，
+            // 实际加载的却是合成斜体（Medium/Bold/Italic），合成会复制整份字体。以加载结果为准，合成了就退回正体
+            if (style != FontStyle.Normal && Simulated(face))
+            {
+                face = new Typeface(family, FontStyle.Normal, (FontWeight)weight, requested.Stretch);
+            }
+            return face;
+        }
+
+        private static bool Simulated(Typeface typeface)
+        {
+            try
+            {
+                return typeface.GlyphTypeface.FontSimulations != FontSimulations.None;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
         private TextRunProperties FallbackProperties(TextRunProperties properties, InlineStyle style, int component, int textStyle, Typeface fallback)
