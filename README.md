@@ -47,6 +47,10 @@ reply.Push(token);  /* … */  reply.Complete();
 var view = new MarkdownView { Markdown = "# Hello" };
 ```
 
+Mermaid diagrams follow the host's light/dark theme and by default reproduce mermaid.js's own themes (`dark` / `default`).
+Pick another look with `new MermaidPlugin(new MermaidDiagramRenderer { Theme = MermaidTheme.MermaidJsNeutral })`
+(grayscale light theme) or `MermaidTheme.Native` (Mermaider's own palette derived from the host colors).
+
 ## Components (whitelisted HTML tags)
 
 Built in: `<details>/<summary>`, `<think>`, `<kbd>`, `<sub>`, `<sup>`, `<mark>`, `<u>`, `<cite href>`, `<Citation id="1"/>`, `<img src width height>`.

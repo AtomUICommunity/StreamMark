@@ -15,6 +15,12 @@ namespace StreamMark.Mermaid;
 public sealed class MermaidDiagramRenderer : IDiagramRenderer
 {
     /// <summary>
+    /// 配色方案。默认 <see cref="MermaidTheme.MermaidJs"/>：复刻 mermaid.js 官方主题（暗色 dark、亮色 default），
+    /// 和浏览器里的效果一致；<see cref="MermaidTheme.Native"/> 则完全由宿主的前景 / 背景 / 强调色推导。
+    /// </summary>
+    public MermaidTheme Theme { get; init; } = MermaidTheme.MermaidJs;
+
+    /// <summary>
     /// 在主题映射之后进一步定制 Mermaider 的渲染选项（样式预设、间距、调色板等）。
     /// 返回值作为最终选项；可用 <c>options with { ... }</c>。
     /// </summary>
@@ -45,26 +51,10 @@ public sealed class MermaidDiagramRenderer : IDiagramRenderer
     {
         cancellationToken.ThrowIfCancellationRequested();
         string svg;
-        List<string>? violations = null;
+        var violations = new List<string>();
         try
         {
-            var options = CreateOptions(context) with
-            {
-                OnSanitized = list =>
-                {
-                    violations ??= [];
-                    foreach (var v in list)
-                    {
-                        violations.Add(v.ToString() ?? string.Empty);
-                    }
-                },
-            };
-            if (ConfigureOptions is { } configure)
-            {
-                options = configure(options, context);
-            }
-
-            svg = MermaidRenderer.RenderSvg(code, options);
+            svg = BuildSvg(code, context, violations);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -102,7 +92,7 @@ public sealed class MermaidDiagramRenderer : IDiagramRenderer
                     return null;
                 }
 
-                var warning = violations is { Count: > 0 } ? "Sanitized: " + string.Join("; ", violations) : null;
+                var warning = violations.Count > 0 ? "Sanitized: " + string.Join("; ", violations) : null;
                 return new SkiaPictureDiagram(picture, skSvg, new Size(cull.Right, cull.Bottom), warning);
             }
             catch
@@ -122,15 +112,51 @@ public sealed class MermaidDiagramRenderer : IDiagramRenderer
         }
     }
 
+    /// <summary>
+    /// Mermaider 渲染并按配色方案重涂后的 SVG（仍含 <c>var()</c>/<c>color-mix()</c>，交给 <see cref="ResolveSvg"/> 展开）。
+    /// 被 Mermaider 清理掉的内容写进 <paramref name="violations"/>。
+    /// </summary>
+    internal string BuildSvg(string code, DiagramRenderContext context, List<string> violations)
+    {
+        var kind = MermaidThemer.Detect(code);
+        var options = CreateOptions(context, Theme, kind) with
+        {
+            OnSanitized = list =>
+            {
+                foreach (var v in list)
+                {
+                    violations.Add(v.ToString() ?? string.Empty);
+                }
+            },
+        };
+        if (ConfigureOptions is { } configure)
+        {
+            options = configure(options, context);
+        }
+
+        var svg = MermaidRenderer.RenderSvg(code, options);
+        return MermaidPalette.For(Theme, context.IsDark) is { } palette
+            ? MermaidThemer.PaintSvg(svg, palette, OpaqueBackground(context), kind)
+            : svg;
+    }
+
     /// <summary>Mermaider SVG → 不含 <c>var()</c>/<c>color-mix()</c> 的 SVG（Svg.Skia 可完整识别）。</summary>
     public static string ResolveSvg(string svg) => CssColorResolver.Resolve(svg);
 
-    /// <summary>把宿主主题映射为 Mermaider 选项。</summary>
+    /// <summary>
+    /// 把宿主主题映射为 Mermaider 选项（<see cref="MermaidTheme.Native"/>：颜色全部由前景 / 背景 / 强调色推导）。
+    /// 带透明度的颜色会叠到不透明的底色上，而不是丢掉透明度。
+    /// </summary>
     public static RenderOptions CreateOptions(DiagramRenderContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        var bg = Opaque(context.Background, context.IsDark ? Color.FromRgb(0x1E, 0x1E, 0x1E) : Colors.White);
-        var fg = Opaque(context.Foreground, context.IsDark ? Color.FromRgb(0xD4, 0xD4, 0xD4) : Color.FromRgb(0x27, 0x27, 0x2A));
+        var bg = OpaqueBackground(context);
+        var fg = DiagramRenderContext.Flatten(context.Foreground, bg);
+        if (context.Foreground.A == 0)
+        {
+            fg = context.IsDark ? Color.FromRgb(0xD4, 0xD4, 0xD4) : Color.FromRgb(0x27, 0x27, 0x2A);
+        }
+
         var options = new RenderOptions
         {
             Bg = CssColorResolver.Format(bg),
@@ -142,7 +168,7 @@ public sealed class MermaidDiagramRenderer : IDiagramRenderer
 
         if (context.Accent.A > 0)
         {
-            options = options with { Accent = CssColorResolver.Format(Opaque(context.Accent, context.Accent)) };
+            options = options with { Accent = CssColorResolver.Format(DiagramRenderContext.Flatten(context.Accent, bg)) };
         }
 
         if (context.FontSize > 0 && double.IsFinite(context.FontSize))
@@ -158,8 +184,25 @@ public sealed class MermaidDiagramRenderer : IDiagramRenderer
         return options;
     }
 
-    private static Color Opaque(Color color, Color fallback) =>
-        color.A == 0 ? fallback : Color.FromRgb(color.R, color.G, color.B);
+    /// <summary>
+    /// 按配色方案把宿主主题映射为 Mermaider 选项（<see cref="MermaidTheme.Native"/> 等同于 <see cref="CreateOptions(DiagramRenderContext)"/>）。
+    /// 不含按图表类别做的色板调整（流程图等把色板换成中性灰）——渲染器渲染时会根据围栏源码补上。
+    /// </summary>
+    public static RenderOptions CreateOptions(DiagramRenderContext context, MermaidTheme theme) =>
+        CreateOptions(context, theme, DiagramKind.Other);
+
+    private static RenderOptions CreateOptions(DiagramRenderContext context, MermaidTheme theme, DiagramKind kind)
+    {
+        var options = CreateOptions(context);
+        return MermaidPalette.For(theme, context.IsDark) is { } palette ? MermaidThemer.Apply(options, palette, kind) : options;
+    }
+
+    /// <summary>图表背后的不透明底色：带透明度的背景叠到默认底色上，完全透明时就用默认底色。</summary>
+    private static Color OpaqueBackground(DiagramRenderContext context)
+    {
+        var fallback = context.IsDark ? Color.FromRgb(0x1E, 0x1E, 0x1E) : Colors.White;
+        return DiagramRenderContext.Flatten(context.Background, fallback);
+    }
 
     /// <summary>
     /// Avalonia 字体族字符串（逗号分隔，可能含 <c>avares://…#Name</c> 或 <c>$Default</c>）→ 第一个可用的系统字体名。

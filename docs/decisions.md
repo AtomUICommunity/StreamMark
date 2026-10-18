@@ -27,6 +27,7 @@
 - **AtomUI 主题用资源别名而不是画刷**：资源字典中画刷上的动态资源从字典所在位置向上查找，找不到 AtomUI 注册在窗口 / 主题作用域内的 token（文字变成透明）。别名由 StreamMark 从 Markdown 控件本身解析。
 - **字体默认继承宿主**：不设置 `Md.FontFamily` / `Md.FontSize` 时沿用控件继承的字体，宿主（如 AtomUI 设在窗口上的字体）无需额外配置。
 - **删除线自绘**：部分字体（含无头环境的回退字体）缺少删除线度量，`TextDecorations.Strikethrough` 不显示。
+- **Mermaid 配色默认复刻 mermaid.js 官方主题（2026-10-18）**：暗色 = dark、亮色 = default（可选 neutral），`MermaidTheme.Native` 保留 Mermaider 原生风格。起因是 AtomUI 的半透明 token 被丢掉 alpha 后图表成了白底白字；修复后与浏览器里的 mermaid.js 对照，原生风格（子图按色板着色、描边偏淡）和 Web 观感差距明显，所以改为默认复刻。颜色取自 mermaid 12.2 在流程图上实际输出的样式表（`MermaidPalette`）；只用 Mermaider 自带的 `Surface` / `Border` / `Line` 等选项，加上对子图与连线标签的 SVG 重涂，不换渲染引擎（merman 能做到像素级一致，但需要自建 Rust 原生库，已评估过、不采用）。图表高度不再封顶 900px（高流程图文字只有约 3px，浏览器里是约 12px），改为只按宽度适配，6000px 为安全上限。
 - **Svg.Skia 固定 5.1.1，托管依赖（Svg.Model / Svg.Custom / ShimSkiaSharp / Svg.SceneGraph）覆盖到 5.2.3（Svg.Animation 例外：5.2.x 依赖 SkiaSharp 4，保持 5.1.1；CI 的 Linux 任务发现了这一点）**：5.1.1 与 Avalonia 12.1 使用相同的 SkiaSharp 3 原生库；5.2.x 的 Svg.Skia 需要 SkiaSharp 4。Svg.Model 5.1.1 内的 `TypeDescriptor.GetConverter` 会产生 2 个 IL2026，5.2.3 已修复。Mermaid 测试（真实渲染）与 Gallery AOT 冒烟均通过。Avalonia 升级到 SkiaSharp 4 后统一升到 5.2+。
 - **RaTeX 本地补丁** `native/patches/0001-enclose-border-uses-current-color.patch`：`\fbox` / `\boxed` 边框原本固定黑色，改为当前颜色；`native/build.sh` 构建前自动应用。应提交上游。
 - **TextMateSharp 不支持 Kotlin**（Grammars 包无该语法）；TOML 映射到 INI 语法。

@@ -80,7 +80,7 @@ StreamMark 是面向 AI 对话场景的高性能流式 Markdown 渲染库：Aval
 |---|---|
 | `StreamMark.RaTeX` | `RaTeXMathRenderer`：C ABI 排版（线程安全、LRU 缓存含错误），显示列表在界面线程转为 `GlyphRun` + 几何；KaTeX 字体从嵌入资源加载为私有 `GlyphTypeface`；默认颜色用哨兵色区分，保留 `\color`；CJK / emoji 回退系统字体 |
 | `StreamMark.Highlighting.TextMate` | `TextMateSyntaxHighlighter`：每个明暗主题一个 Registry + 锁（TextMateSharp 2.0.4 非线程安全）；会话按行缓存语法状态，追加只着色新行，中间修改在结束状态一致处停止；冷启动超时行重试 |
-| `StreamMark.Mermaid` | `MermaidDiagramRenderer`：Mermaider → SVG → 解析 `var()` / `color-mix()` 为字面颜色 → Svg.Skia `SKPicture` → 自定义绘制操作在 Avalonia 的 Skia 画布上矢量回放 |
+| `StreamMark.Mermaid` | `MermaidDiagramRenderer`：Mermaider → SVG → 按配色方案（默认复刻 mermaid.js 官方主题）重涂子图与连线标签 → 解析 `var()` / `color-mix()` 为字面颜色 → Svg.Skia `SKPicture` → 自定义绘制操作在 Avalonia 的 Skia 画布上矢量回放；传入的前景 / 底色先由 `DiagramBlockView` 叠到真实底色上 |
 | `StreamMark.Theme.AtomUI` | `AtomUIMarkdownTheme`：`Md.*` → `MarkdownResourceAlias(SharedTokenKind.*)`，从控件本身解析 AtomUI token |
 
 ### 主题解析
