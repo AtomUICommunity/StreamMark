@@ -17,6 +17,8 @@
     <!-- src/ 下的库：可打包、启用 AOT 兼容性分析与 XML 文档 -->
     <PropertyGroup Condition="$(MSBuildProjectDirectory.Contains('$([System.IO.Path]::DirectorySeparatorChar)src$([System.IO.Path]::DirectorySeparatorChar)'))">
         <IsPackable>true</IsPackable>
+        <!-- 发布到 NuGet 的包名为 TKCode.StreamMark.*；程序集名仍为 StreamMark.*，宿主的 PackageReference 不用改 -->
+        <PackageId>TKCode.$(MSBuildProjectName)</PackageId>
         <IsAotCompatible>true</IsAotCompatible>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <NoWarn>$(NoWarn);CS1591</NoWarn>
