@@ -10,6 +10,13 @@ on:
         description: Run BenchmarkDotNet
         type: boolean
         default: false
+      publish:
+        description: Pack and publish TKCode.StreamMark.* to nuget.org (trusted publishing)
+        type: boolean
+        default: false
+      version:
+        description: Package version when publishing (for example 0.1.0-alpha.22)
+        type: string
 
 env:
   DOTNET_NOLOGO: true
@@ -142,7 +149,8 @@ jobs:
   # 策略要求：Owner AtomUICommunity、Repository StreamMark、Workflow ci.yml、Environment nuget；
   # nuget.org 用户名（个人资料名，不是邮箱）放在 GitHub environment nuget 的 secret NUGET_USER。
   nuget:
-    if: startsWith(github.ref, 'refs/tags/v')
+    # v* tag，或手动运行时勾选 publish。tag 触发在本仓库不启动 workflow（Actions 创建的 tag 被忽略），所以发布走手动。
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish)
     needs: [native-ratex, build-test, aot-smoke]
     runs-on: ubuntu-latest
     environment: nuget
@@ -161,11 +169,14 @@ jobs:
           path: artifacts/native
       - name: Pack
         shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           cd artifacts/native
           for d in ratex-*; do mv "$d" "${d#ratex-}"; done
           cd "$GITHUB_WORKSPACE"
-          version="${GITHUB_REF_NAME#v}"
+          if [ "${GITHUB_EVENT_NAME}" = workflow_dispatch ]; then version="${INPUT_VERSION}"; else version="${GITHUB_REF_NAME#v}"; fi
+          version="${version#v}"
           echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' || { echo "::error::invalid version $version"; exit 1; }
           for project in Core Avalonia RaTeX Highlighting.TextMate Mermaid Theme.AtomUI; do
             dotnet pack "src/StreamMark.$project" -c Release -o artifacts/packages -p:Version="$version" --nologo
