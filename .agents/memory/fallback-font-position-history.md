@@ -2,7 +2,7 @@
 name: fallback-font-position-history
 description: Windows CI 上 IncrementalLayoutTests 失败的原因：回退字体曾依赖取 run 的起点与 Avalonia 的匹配历史
 type: project
-updated: 2026-10-18
+updated: 2026-10-19
 source: session
 evidence: [src/StreamMark.Avalonia/Rendering/TextSegmentView.cs:MatchFallback, tests/StreamMark.Avalonia.Tests/Rendering/IncrementalLayoutTests.cs:StreamedMixedScripts_MatchFullLayout]
 ---
@@ -12,3 +12,7 @@ alpha.16 引入逐行排版后，`StreamedLineBreaks_MatchFullLayout_AtEveryStep
 **How to apply:** 改动 `InlineTextSource` 的 run 切分或回退字体时，保证同一段文字无论从哪个位置开始取、何时取，都得到同一字体；跑 `IncrementalLayoutTests`。
 
 2026-10-18 补充：按字缓存会固定 Avalonia 某一刻的偶然结果。PR #2 的 CI 上，`InlineStyles_Render` 按字重探测 `GlyphTypeface` 把"Yu Gothic UI Semibold"加载进了 Avalonia 的缓存，之后"斜"被固定到这个族，渲染成 Yu Gothic Bold + 合成斜体（`3b192e6` 去掉了探测）。曾考虑直接调用系统回退（`IFontManagerImpl.TryMatchCharacter`），但 Avalonia 的引用程序集剥掉了 `AvaloniaLocator.Current` 等私有 API，编译不过；按文字类别的确定回退表被搁置，维持现状。
+
+2026-10-19 再次触发：`8bff953` 新增的表格用例渲染中文粗体表头，同进程里先把按字重拆开的中文回退族缓存好，之后 `FallbackRuns_UseRealFaces_NotSyntheticCopies` 在 Windows CI 上报 `Yu Gothic/Bold/Italic (Oblique)`（macOS 本机复现不了，Avalonia 12.1.3 → 12.1.4 没有字体代码改动）。机制见 Avalonia 12 的 `FontCollectionBase`：精确 key 未缓存而同族已有别的字面时，`TryGetGlyphTypeface(allowNearestMatch)` 取最近字面并 `TryCreateSyntheticGlyphTypeface`，合成字面沿用被取来的那个字面的字重，并缓存在该族里。上一次修复 `e979543` 的 `Simulated()`（先加载 `(Italic, w)` 再看有没有合成）本身就会制造这份合成字面，所以不可靠。现在 `RealFace` 对回退字体一律用正体，不请求斜体；测试固定为暖缓存顺序，失败信息带上排版用的 Typeface 与该族列出的字面。
+
+**How to apply (2026-10-19):** 回退字体不要请求斜体，也不要用 `Typeface.GlyphTypeface` 试探任何不确定存在的字面；字体断言要在「别的用例已缓存好回退族」的状态下也成立。

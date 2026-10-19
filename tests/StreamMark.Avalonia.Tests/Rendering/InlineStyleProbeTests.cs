@@ -54,6 +54,17 @@ public sealed class InlineStyleProbeTests
         {
             // 回归：回退字体缺少粗体 / 斜体字面时（Apple Color Emoji、苹方 700），不能让 Avalonia 合成字形——
             // 合成会把整份字体文件复制进内存（Apple Color Emoji 约 600MB）
+            // 先渲染一段中文粗体：同进程里别的用例（如表格的粗体表头）会先把中文回退族缓存好，
+            // Windows 上是按字重拆开的 "Yu Gothic UI Semibold"。斜体请求遇到这种暖缓存才会取到合成字面，
+            // 所以这里固定成暖缓存，不依赖用例的执行顺序
+            var warm = new MarkdownView { Markdown = "**表头 运行 轮次**", Margin = new(16) };
+            var warmWindow = new Window { Width = 300, Height = 100, Content = warm };
+            warmWindow.Show();
+            await HeadlessApp.Settle();
+            warm.ApplyLatest();
+            await HeadlessApp.Settle();
+            warmWindow.Close();
+
             var view = new MarkdownView { Markdown = "### 🤝 贡献\n\n普通 😀 **粗体 😀 中文** *斜体 😀 中文* ***粗斜 😀***", Margin = new(16) };
             var window = new Window { Width = 700, Height = 200, Content = view };
             window.Show();
@@ -73,8 +84,22 @@ public sealed class InlineStyleProbeTests
                 {
                     continue;
                 }
-                Assert.True(face.FontSimulations == FontSimulations.None,
-                    $"'{run.Text.Span}' uses synthetic {face.FamilyName}/{face.Weight}/{face.Style} ({face.FontSimulations})");
+                if (face.FontSimulations != FontSimulations.None)
+                {
+                    // 带上排版时给这个 run 的 Typeface 和该族列出的字面：Windows 上的字体环境本机复现不了，失败信息要够定位
+                    var asked = run.Properties.Typeface;
+                    string listed;
+                    try
+                    {
+                        listed = string.Join(", ", asked.FontFamily.FamilyTypefaces.Select(f => $"{f.Style}/{(int)f.Weight}"));
+                    }
+                    catch (Exception ex)
+                    {
+                        listed = ex.GetType().Name;
+                    }
+                    Assert.Fail($"'{run.Text.Span}' uses synthetic {face.FamilyName}/{face.Weight}/{face.Style} ({face.FontSimulations}); " +
+                        $"laid out with {asked.FontFamily.Name}/{asked.Style}/{asked.Weight}, family lists [{listed}], primary {primary}");
+                }
             }
             window.Close();
         });

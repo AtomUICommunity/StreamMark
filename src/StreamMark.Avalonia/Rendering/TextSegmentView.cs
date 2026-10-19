@@ -1115,10 +1115,13 @@ public sealed class TextSegmentView : Control, ISelectableSegment
         // 回退字体只用字体族里真实存在的字面。系统字体缺少所需字重或字形时（如苹方最粗只有中粗 600、
         // Apple Color Emoji 只有常规体），Avalonia 会合成粗体 / 斜体，合成时把整份字体文件复制进内存并常驻
         // （Apple Color Emoji 约 600MB）。所以不能用 GlyphTypeface 去试探不存在的字重：
-        // 粗体取不低于 500 的最粗真实字面，没有就用常规字重；没有对应字形的真实字面就用正体
+        // 粗体取不低于 500 的最粗真实字面，没有就用常规字重。
+        // 回退字体一律用正体，不请求 Italic：FamilyTypefaces 在 Windows 上会列出并不存在的斜体字面
+        // （按字重拆开的族如 "Yu Gothic UI Semibold"），Avalonia 只能取同族已缓存的最近字面合成斜体
+        // （整份字体复制一份并常驻，还会被缓存在这个族里，之后同族的正体请求也可能取到它）。
+        // 也不能先加载一下再看有没有被合成：加载本身就会创建并缓存合成字面。CJK、表情、符号字体基本没有真斜体
         private static Typeface RealFace(FontFamily family, Typeface requested)
         {
-            var typeface = new Typeface(family, requested.Style, requested.Weight, requested.Stretch);
             IReadOnlyList<Typeface> faces;
             try
             {
@@ -1130,10 +1133,9 @@ public sealed class TextSegmentView : Control, ISelectableSegment
             }
             if (faces.Count == 0)
             {
-                return typeface;
+                return new Typeface(family, FontStyle.Normal, requested.Weight, requested.Stretch);
             }
-            var style = faces.Any(f => f.Style == requested.Style) ? requested.Style : FontStyle.Normal;
-            var weights = faces.Where(f => f.Style == style).Select(f => (int)f.Weight).ToList();
+            var weights = faces.Where(f => f.Style == FontStyle.Normal).Select(f => (int)f.Weight).ToList();
             if (weights.Count == 0)
             {
                 weights = faces.Select(f => (int)f.Weight).ToList();
@@ -1149,26 +1151,7 @@ public sealed class TextSegmentView : Control, ISelectableSegment
             {
                 weight = weights.OrderBy(w => Math.Abs(w - (int)requested.Weight)).First();
             }
-            var face = new Typeface(family, style, (FontWeight)weight, requested.Stretch);
-            // FamilyTypefaces 列出的字面不一定真能加载：Windows CI 的 Yu Gothic 列出 Italic，
-            // 实际加载的却是合成斜体（Medium/Bold/Italic），合成会复制整份字体。以加载结果为准，合成了就退回正体
-            if (style != FontStyle.Normal && Simulated(face))
-            {
-                face = new Typeface(family, FontStyle.Normal, (FontWeight)weight, requested.Stretch);
-            }
-            return face;
-        }
-
-        private static bool Simulated(Typeface typeface)
-        {
-            try
-            {
-                return typeface.GlyphTypeface.FontSimulations != FontSimulations.None;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
+            return new Typeface(family, FontStyle.Normal, (FontWeight)weight, requested.Stretch);
         }
 
         private TextRunProperties FallbackProperties(TextRunProperties properties, InlineStyle style, int component, int textStyle, Typeface fallback)
