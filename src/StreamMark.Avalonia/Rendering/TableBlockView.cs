@@ -12,7 +12,7 @@ namespace StreamMark.Avalonia.Rendering;
 /// <summary>
 /// 表格：自定义布局（不使用 Grid，流式追加行时不会触发 Grid 的测量问题）。
 /// 列宽取各列自然宽度，超出可用宽度时按比例收缩并换行，仍放不下时允许横向滚动。
-/// 悬停时右上角显示"复制为 Markdown"。
+/// 悬停时在表格边框上方（网格外）显示「复制为 Markdown」，需要时还有全屏。按钮不进单元格，避免被表头文字盖住。
 /// </summary>
 public sealed class TableBlockView : BlockView
 {
@@ -20,6 +20,9 @@ public sealed class TableBlockView : BlockView
     private const double CellPaddingY = 6;
     private const double MinColumn = 64;
     private const double MaxColumn = 420;
+
+    /// <summary>网格上方操作条的高度（与 <see cref="IconButton"/> 一致）。按钮排在这里，而不是表头单元格里。会话行高估算也要算上它。</summary>
+    internal const double ActionBarHeight = 26;
 
     private readonly List<List<TextSegmentView>> _cells = [];
     private readonly IconButton _copy = new() { Icon = MarkdownIcons.Copy, IsVisible = false };
@@ -36,6 +39,8 @@ public sealed class TableBlockView : BlockView
         ClipToBounds = true;
         AddChild(_copy);
         AddChild(_fullscreen);
+        global::Avalonia.Automation.AutomationProperties.SetName(_copy, "Copy");
+        global::Avalonia.Automation.AutomationProperties.SetName(_fullscreen, "Fullscreen");
         _fullscreen.Click += (_, _) => OpenFullscreen();
         _copy.Click += async (_, _) =>
         {
@@ -91,7 +96,22 @@ public sealed class TableBlockView : BlockView
             _cells[^1].ForEach(RemoveChild);
             _cells.RemoveAt(_cells.Count - 1);
         }
+        // 单元格在按钮之后加入，会画在按钮上面把它盖住。每次更新后把操作按钮放回最上层。
+        BringActionsToFront();
         InvalidateMeasure();
+    }
+
+    private void BringActionsToFront()
+    {
+        var count = VisualChildren.Count;
+        if (count >= 2 && ReferenceEquals(VisualChildren[count - 2], _fullscreen) && ReferenceEquals(VisualChildren[count - 1], _copy))
+        {
+            return;
+        }
+        RemoveChild(_fullscreen);
+        RemoveChild(_copy);
+        AddChild(_fullscreen);
+        AddChild(_copy);
     }
 
     protected override Size MeasureOverride(Size availableSize)
@@ -137,7 +157,7 @@ public sealed class TableBlockView : BlockView
         _copy.Measure(Size.Infinity);
         _fullscreen.Measure(Size.Infinity);
         _offsetX = Math.Clamp(_offsetX, 0, Math.Max(0, _contentWidth - available));
-        return new Size(Math.Min(_contentWidth, available) + 1, _rowHeights.Sum() + 1);
+        return new Size(Math.Min(_contentWidth, available) + 1, _rowHeights.Sum() + 1 + ActionBarHeight);
     }
 
     protected override Size ArrangeOverride(Size finalSize)
@@ -149,7 +169,7 @@ public sealed class TableBlockView : BlockView
             TextAlign.Right => spare,
             _ => 0,
         };
-        double y = 0;
+        double y = ActionBarHeight;
         for (var r = 0; r < _cells.Count; r++)
         {
             var x = _shift - _offsetX;
@@ -161,8 +181,9 @@ public sealed class TableBlockView : BlockView
             y += _rowHeights[r];
         }
         var visibleRight = Math.Min(finalSize.Width, _shift + _contentWidth + 1);
-        _copy.Arrange(new Rect(visibleRight - _copy.DesiredSize.Width - 3, 3, _copy.DesiredSize.Width, _copy.DesiredSize.Height));
-        _fullscreen.Arrange(new Rect(visibleRight - _copy.DesiredSize.Width - _fullscreen.DesiredSize.Width - 5, 3, _fullscreen.DesiredSize.Width, _fullscreen.DesiredSize.Height));
+        var buttonY = Math.Max(0, ActionBarHeight - _copy.DesiredSize.Height);
+        _copy.Arrange(new Rect(visibleRight - _copy.DesiredSize.Width - 3, buttonY, _copy.DesiredSize.Width, _copy.DesiredSize.Height));
+        _fullscreen.Arrange(new Rect(visibleRight - _copy.DesiredSize.Width - _fullscreen.DesiredSize.Width - 5, buttonY, _fullscreen.DesiredSize.Width, _fullscreen.DesiredSize.Height));
         return finalSize;
     }
 
@@ -176,7 +197,7 @@ public sealed class TableBlockView : BlockView
         var pen = new Pen(style.TableBorderBrush, 1);
         var width = _contentWidth;
         var height = _rowHeights.Sum();
-        using (context.PushTransform(Matrix.CreateTranslation(_shift - _offsetX, 0)))
+        using (context.PushTransform(Matrix.CreateTranslation(_shift - _offsetX, ActionBarHeight)))
         {
             if (Block is TableBlock { Rows.Length: > 0 } table && table.Rows[0].IsHeader)
             {

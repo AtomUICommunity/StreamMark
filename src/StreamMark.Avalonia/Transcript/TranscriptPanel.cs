@@ -711,7 +711,7 @@ public sealed class TranscriptPanel : Panel, ILogicalScrollable, ISelectionHost
             HeadingBlock h => style.HeadingFontSize(h.Level) * 1.6 + 10,
             CodeBlock c => (c.Code.Count(ch => ch == '\n') + 1) * style.CodeLineHeight + 48,
             MathBlock => style.FontSize * 3,
-            TableBlock t => t.Rows.Length * (style.LineHeight + 12),
+            TableBlock t => t.Rows.Length * (style.LineHeight + 12) + TableBlockView.ActionBarHeight,
             ListBlock l => l.Items.Sum(i => i.Children.Sum(child => Estimate(child, context))) + l.Items.Length * 4,
             QuoteBlock q => q.Children.Sum(child => Estimate(child, context)) + q.Children.Length * style.BlockSpacing,
             HtmlBoxBlock b => b.Children.Sum(child => Estimate(child, context)) + b.Children.Length * style.BlockSpacing + b.Box.Margin.Top + b.Box.Margin.Bottom + b.Box.Padding.Top + b.Box.Padding.Bottom,

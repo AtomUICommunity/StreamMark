@@ -35,7 +35,7 @@ updated: 2026-10-16
 | `TextBlockView` / `ThematicBreakBlockView` | `src/StreamMark.Avalonia/Rendering/BlockView.cs:159` / `:225` | 段落 / 标题 / HTML 块（一个 `TextSegmentView`，H1/H2 下方画分隔线）；分隔线（固定高 17） |
 | `CodeBlockView` + `CodeTextView` | `src/StreamMark.Avalonia/Rendering/CodeBlockView.cs:22` / `:256` | 代码块头（语言标题、插件操作、换行、复制）+ 逐行排版缓存的代码区；`SetChunk`（:73）只显示某一窗口的行，偏移保持全局 |
 | `CodeBlockState` | `src/StreamMark.Avalonia/Rendering/CodeBlockState.cs:11` | 块共享状态：代码、行起点、增量高亮会话；`For(context, blockKey, language)`（:48）从 `BlockStateStore` 取，语言 / 高亮器 / 明暗变化时重建 |
-| `TableBlockView` | `src/StreamMark.Avalonia/Rendering/TableBlockView.cs:17` | 自定义列宽布局（不用 `Grid`），列宽自然宽度 → 按比例收缩 → 横向滚动；悬停显示“复制为 Markdown” |
+| `TableBlockView` | `src/StreamMark.Avalonia/Rendering/TableBlockView.cs:17` | 自定义列宽布局（不用 `Grid`），列宽自然宽度 → 按比例收缩 → 横向滚动；悬停时在网格上方的操作条（`ActionBarHeight`）显示“复制为 Markdown” / 全屏，按钮不进单元格 |
 | `MathBlockView` | `src/StreamMark.Avalonia/Rendering/MathBlockView.cs:15` | 块级公式，`ISelectableSegment` 自身即片段；排版失败时保留上一次成功结果，闭合后仍失败则退回源码 |
 | `DiagramBlockView` | `src/StreamMark.Avalonia/Rendering/DiagramBlockView.cs:17` | 图表（如 Mermaid）后台渲染 + 静态 LRU 缓存 + 图表 / 源码切换，渲染前与失败时显示源码；挂上可视树后才渲染，主题的半透明颜色叠到真实底色上再传给渲染器；图表按宽度适配、高度只受 6000px 安全上限约束 |
 | `HtmlBoxBlockView` + `HtmlPaint` | `src/StreamMark.Avalonia/Rendering/HtmlBoxBlockView.cs:11` / `HtmlPaint.cs:9` | HTML 盒子：外边距 / 边框 / 背景 / 宽度，文字样式经 `RenderContext.WithHtml` 下传；`HtmlPaint` 处理作者颜色的对比度 |

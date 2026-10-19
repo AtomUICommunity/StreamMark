@@ -2,7 +2,7 @@
 module: build-and-packaging
 sources: ["Directory.Build.props", "Directory.Build.targets", "Directory.Packages.props", "global.json", "StreamMark.slnx", ".github/workflows/ci.yml", "tools/pack-local.sh", "bench/**"]
 commit: e01b99a
-updated: 2026-10-16
+updated: 2026-10-19
 ---
 # 构建与打包
 
@@ -34,8 +34,8 @@ updated: 2026-10-16
 | `_StreamMarkNativeDir` | `Directory.Build.targets:10` | `$(MSBuildThisFileDirectory)artifacts\native\<rid>\` —— 原生库的来源目录 |
 | `None Include=...*ratex_ffi.*`（复制原生库的 Item） | `Directory.Build.targets:13` | 条件 `'$(IsPackable)' != 'true' and Exists('$(_StreamMarkNativeDir)')`（`:12`）；排除 `*.a;*.lib;*.d`，`Link=%(Filename)%(Extension)` 平铺到输出根，`CopyToOutputDirectory` / `CopyToPublishDirectory = PreserveNewest`、`Visible=false`（`:14`） |
 | `ManagePackageVersionsCentrally` | `Directory.Packages.props:3` | 打开 CPM：所有 `<PackageReference>` 不带版本 |
-| `AvaloniaVersion` | `Directory.Packages.props:5` | `12.1.3`，被 `Avalonia` / `Avalonia.Desktop` / `Avalonia.Skia` / `Avalonia.Themes.Fluent` / `Avalonia.Headless` 五行引用（`:9-13`）；注释说明与 TCode / AtomUI 6.2.5 所用版本一致 |
-| `PackageVersion` 清单 | `Directory.Packages.props:9`–`:26` | Avalonia 五件套 + `AtomUI.Core 6.2.5`（`:15`）+ `Markdig 1.4.0`（`:17`）+ `TextMateSharp` / `TextMateSharp.Grammars 2.0.4`（`:18`、`:19`）+ `Mermaider 0.15.1`（`:20`）+ `Svg.Skia 5.2.3`（`:21`）+ `Microsoft.NET.Test.Sdk 18.11.0` / `xunit.v3 3.2.2` / `xunit.runner.visualstudio 3.1.5` / `BenchmarkDotNet 0.15.8`（`:23-26`） |
+| `AvaloniaVersion` | `Directory.Packages.props:5` | `12.1.4`，被 `Avalonia` / `Avalonia.Desktop` / `Avalonia.Skia` / `Avalonia.Themes.Fluent` / `Avalonia.Headless` 五行引用（`:9-13`）；注释说明与 TKCode / AtomUI 6.2.6 所用版本一致 |
+| `PackageVersion` 清单 | `Directory.Packages.props:9`–`:26` | Avalonia 五件套 + `AtomUI.Core 6.2.6`（`:15`）+ `Markdig 1.4.0`（`:17`）+ `TextMateSharp` / `TextMateSharp.Grammars 2.0.4`（`:18`、`:19`）+ `Mermaider 0.15.1`（`:20`）+ `Svg.Skia 5.2.3`（`:21`）+ `Microsoft.NET.Test.Sdk 18.11.0` / `xunit.v3 3.2.2` / `xunit.runner.visualstudio 3.1.5` / `BenchmarkDotNet 0.15.8`（`:23-26`） |
 | `VersionOverride`（Mermaid 的版本覆盖） | `src/StreamMark.Mermaid/StreamMark.Mermaid.csproj:14`–`:21` | CPM 的唯一例外：`Svg.Skia` 固定 `5.1.1`（`:14`）、`Svg.Model` / `Svg.Custom` / `ShimSkiaSharp` / `Svg.SceneGraph` 覆盖到 `5.2.3`（`:17-20`）、`Svg.Animation` 保持 `5.1.1`（`:21`，5.2.x 依赖 SkiaSharp 4）；理由与实测见 `docs/decisions.md:30` |
 | `sdk.version` / `sdk.rollForward` | `global.json:3`、`:4` | 要求 `10.0.300`，同一 feature band 内允许上浮（本机 10.0.301 满足） |
 | 解决方案分组 | `StreamMark.slnx:2`、`:10`、`:14`、`:17` | `<Folder>` + `<Project Path>` 列出 6 库 + 2 测试 + 1 基准 + 1 示例；`dotnet build/test StreamMark.slnx` 是 CI 与 README 的统一入口 |
@@ -55,7 +55,7 @@ updated: 2026-10-16
 - Uses: `tests` via 解决方案与快照目录 —— `.github/workflows/ci.yml:76`、`:78`；`tests/StreamMark.Avalonia.Tests/HeadlessApp.cs:39` 读 `STREAMMARK_SNAPSHOT_DIR`。
 - Used by: 所有 `src/` 模块 via MSBuild 自动导入 —— `Directory.Build.props:3`、`:14`、`:18`（TFM、IL 警告即错误、`IsPackable` / `IsAotCompatible` / XML 文档）与 `Directory.Packages.props:3`（`<PackageReference>` 一律省版本号，例如 `src/StreamMark.Core/StreamMark.Core.csproj:6`、`src/StreamMark.Avalonia/StreamMark.Avalonia.csproj:7`）。
 - Used by: `native-ratex`（反向）via `artifacts/` 目录约定与 CI 调用 —— `native/build.sh:15` 把 `CARGO_TARGET_DIR` 指到 `artifacts/cargo`，`.github/workflows/ci.yml:42`、`:46`、`:39`；`native-ratex` 模块页面同样会链接本页。
-- 类库内部依赖：`Directory.Packages.props:15` 的 `AtomUI.Core 6.2.5` 只被 `src/StreamMark.Theme.AtomUI/StreamMark.Theme.AtomUI.csproj:8` 直接引用；`Directory.Packages.props:21` 的 `Svg.Skia` 只被 `src/StreamMark.Mermaid/StreamMark.Mermaid.csproj:14` 引用（用 `VersionOverride` 压到 5.1.1）。
+- 类库内部依赖：`Directory.Packages.props:15` 的 `AtomUI.Core 6.2.6` 只被 `src/StreamMark.Theme.AtomUI/StreamMark.Theme.AtomUI.csproj:8` 直接引用；`Directory.Packages.props:21` 的 `Svg.Skia` 只被 `src/StreamMark.Mermaid/StreamMark.Mermaid.csproj:14` 引用（用 `VersionOverride` 压到 5.1.1）。
 
 ## State it owns
 - `artifacts/` 是唯一的构建产物根，**整体被忽略**：`.gitignore:9`（`git check-ignore` 确认 `artifacts/native/.../libratex_ffi.dylib`、`artifacts/packages/*.nupkg`、`artifacts/aot/StreamMark.Gallery` 均命中 `.gitignore:9`）。
@@ -74,7 +74,7 @@ updated: 2026-10-16
 - IL 警告即错误：`Directory.Build.props:14` 的 ID 列表对**每个项目**生效（`IL2026` 反射 / `IL3050` AOT 代码生成 / `IL3000` 单文件路径等都在内）。这是编译期门禁，任何项目引入反射式 API 都会直接把构建打断。
 - 非可打包项目按 RID 复制原生库：条件 `'$(IsPackable)' != 'true'` 同时命中"显式 `IsPackable=false`"（`samples/StreamMark.Gallery/StreamMark.Gallery.csproj:4`、`tests/StreamMark.Core.Tests/StreamMark.Core.Tests.csproj:4`、`tests/StreamMark.Avalonia.Tests/StreamMark.Avalonia.Tests.csproj:4`、`bench/StreamMark.Benchmarks/StreamMark.Benchmarks.csproj:4`）与"未设置该属性"的项目；RID 取 `$(RuntimeIdentifier)`，缺省回退 `$(NETCoreSdkPortableRuntimeIdentifier)`；目录不存在时整组 Item 不生成（`Directory.Build.targets:12`），所以没编过原生库也能构建（只是运行时会缺库）。
 - NuGet 使用方走另一条路：包内 `runtimes\<rid>\native\` 由 `src/StreamMark.RaTeX/StreamMark.RaTeX.csproj:22` 的 `Pack="true" PackagePath="runtimes\%(RecursiveDir)native\%(Filename)%(Extension)"` 生成，宿主按自身 RID 自动选用，不经过 `Directory.Build.targets`。
-- 中央版本清单（`Directory.Packages.props`）：`Avalonia*` 12.1.3（`:5`、`:9-13`）必须与 `AtomUI.Core` 6.2.5（`:15`）配套（注释 `:4`、`:14` 说明与 TCode 一致）；`Markdig 1.4.0`、`TextMateSharp(.Grammars) 2.0.4`、`Mermaider 0.15.1`、`Svg.Skia 5.2.3`；测试栈 `xunit.v3 3.2.2` + `Microsoft.NET.Test.Sdk 18.11.0` + `xunit.runner.visualstudio 3.1.5`；基准 `BenchmarkDotNet 0.15.8`。
+- 中央版本清单（`Directory.Packages.props`）：`Avalonia*` 12.1.4（`:5`、`:9-13`）必须与 `AtomUI.Core` 6.2.6（`:15`）配套（注释 `:4`、`:14` 说明与 TKCode 一致）；`Markdig 1.4.0`、`TextMateSharp(.Grammars) 2.0.4`、`Mermaider 0.15.1`、`Svg.Skia 5.2.3`；测试栈 `xunit.v3 3.2.2` + `Microsoft.NET.Test.Sdk 18.11.0` + `xunit.runner.visualstudio 3.1.5`；基准 `BenchmarkDotNet 0.15.8`。
 - 版本覆盖（`VersionOverride`）是 CPM 的受控逃生口，目前只允许 Mermaid 用：`Svg.Skia 5.1.1` 与 `Svg.Animation 5.1.1`，其余 Svg 托管依赖 5.2.3（`src/StreamMark.Mermaid/StreamMark.Mermaid.csproj:14-21`）。`obj/project.assets.json` 显示实际解析结果就是 `Svg.Skia/5.1.1`、`Svg.Model/5.2.3`、`Svg.Custom/5.2.3`、`ShimSkiaSharp/5.2.3`、`Svg.SceneGraph/5.2.3`。
 - SDK 版本：`10.0.300` 起，允许 feature band 内上浮（`global.json:3`、`:4`）；包恢复时把 `NU1605`（降级）当错误（`src/StreamMark.Mermaid/obj/project.assets.json` 的 `warningProperties.warnAsError`），所以中央版本只能往上调、不能悄悄往下降。
 - 命令入口：`dotnet build StreamMark.slnx -c Release`（`.github/workflows/ci.yml:74`）、`dotnet test StreamMark.slnx -c Release --no-build`（`:76`）、`dotnet publish samples/StreamMark.Gallery -c Release -r <rid>`（`:111`）、`tools/pack-local.sh <version>`（`tools/pack-local.sh:3`）。
@@ -93,8 +93,8 @@ updated: 2026-10-16
 - **SDK 不会把 `RuntimeIdentifier` 传给被引用项目**，所以仓库内可执行项目（示例 / 测试 / 基准）靠 `Directory.Build.targets` 按自己的 RID 从 `artifacts/native/<rid>/` 复制原生库 —— see `Directory.Build.targets:8-13`；交叉发布时曾因此复制了错误架构的库（osx-x64 发布拿到 arm64），记录在 `docs/decisions.md:33`。条件里的 `$(NETCoreSdkPortableRuntimeIdentifier)`（`:9`）就是"未指定 RID 时用本机 RID"的兜底。
 - **`'$(IsPackable)' != 'true'` 也命中"没写过这个属性"的项目** —— see `Directory.Build.targets:7`。后果：任何新建的项目只要不在 `/src/` 下、又没显式 `IsPackable=false`，也会被塞进原生库复制项；反过来，若某个 `src/` 项目被加进复制列表的目录范围之外就复制不到。判断"是否可打包"时不要依赖"属性未设置"这个状态。
 - **NuGet 使用方与仓库内的取库路径完全不同**：使用方按 RID 从包内 `runtimes/<rid>/native/` 自动选用（`src/StreamMark.RaTeX/StreamMark.RaTeX.csproj:29`），仓库内走 `artifacts/native/<rid>/`（`Directory.Build.targets:13`）。只改一边会出现"包能跑、仓库内测试跑不起来"或反之 —— see `docs/decisions.md:33`。
-- **`Svg.Skia` 的版本组合是刻意不一致的**：`Directory.Packages.props:21` 声明 5.2.3，但 Mermaid 用 `VersionOverride` 把它压回 5.1.1，只为托管依赖升到 5.2.3（`src/StreamMark.Mermaid/StreamMark.Mermaid.csproj:14-21`）。`Svg.Animation` 必须是 5.1.1（5.2.x 依赖 SkiaSharp 4，与 Avalonia 12.1.3 的 SkiaSharp 3 冲突）；`Svg.Skia` 升到 5.2.x 会把 SkiaSharp 拉到 4 —— see `docs/decisions.md:30`。同时 `NU1605`（降级）被当错误 —— see `src/StreamMark.Mermaid/obj/project.assets.json` 的 `warningProperties.warnAsError`，所以这类覆盖只能靠 `VersionOverride` 表达，不能靠"中央版本调低"。
-- **Avalonia 版本与 AtomUI 版本是绑定关系**：`Directory.Packages.props:5` 的 12.1.3 与 `:15` 的 `AtomUI.Core 6.2.5` 必须一起动（注释 `:4`、`:14` 写明与 TCode 使用的组合一致）；单独升 Avalonia 会让 `StreamMark.Theme.AtomUI`（引用 `AtomUI.Core`，`src/StreamMark.Theme.AtomUI/StreamMark.Theme.AtomUI.csproj:8`）对不上。
+- **`Svg.Skia` 的版本组合是刻意不一致的**：`Directory.Packages.props:21` 声明 5.2.3，但 Mermaid 用 `VersionOverride` 把它压回 5.1.1，只为托管依赖升到 5.2.3（`src/StreamMark.Mermaid/StreamMark.Mermaid.csproj:14-21`）。`Svg.Animation` 必须是 5.1.1（5.2.x 依赖 SkiaSharp 4，与 Avalonia 12.1.4 的 SkiaSharp 3 冲突）；`Svg.Skia` 升到 5.2.x 会把 SkiaSharp 拉到 4 —— see `docs/decisions.md:30`。同时 `NU1605`（降级）被当错误 —— see `src/StreamMark.Mermaid/obj/project.assets.json` 的 `warningProperties.warnAsError`，所以这类覆盖只能靠 `VersionOverride` 表达，不能靠"中央版本调低"。
+- **Avalonia 版本与 AtomUI 版本是绑定关系**：`Directory.Packages.props:5` 的 12.1.4 与 `:15` 的 `AtomUI.Core 6.2.6` 必须一起动（注释 `:4`、`:14` 写明与 TKCode 使用的组合一致）；单独升 Avalonia 会让 `StreamMark.Theme.AtomUI`（引用 `AtomUI.Core`，`src/StreamMark.Theme.AtomUI/StreamMark.Theme.AtomUI.csproj:8`）对不上。
 - **`src/` 判定是字符串包含，不是目录层级**：条件用 `$(MSBuildProjectDirectory).Contains('/src/')`（`Directory.Build.props:18`，用 `[System.IO.Path]::DirectorySeparatorChar` 拼）。任何路径里带 `/src/` 的目录都会继承可打包 + AOT 属性，这是"移动项目目录会改变项目行为"的陷阱。
 - **`pack-local.sh` 不会自动发现新包**：项目名列表写死在 `tools/pack-local.sh:7`，且版本必须每次显式传参（`:6` 的 `:?` 会让空参数直接失败）；收尾 `ls | grep "$version"`（`:10`）只是回显，不会因为缺包而报错退出 —— 少打了一个包不会被这个脚本发现。
 - **CI 的 `snapshots-<rid>` 上传用 `if-no-files-found: ignore`**（`.github/workflows/ci.yml:84`）而原生库 artifact 用 `error`（`:51`）：前者缺文件是正常（无头测试可能没写截图），后者缺文件说明原生构建没产出，必须失败。
@@ -110,4 +110,4 @@ updated: 2026-10-16
 
 ## Related flows
 None —— 构建与打包不在任何运行时流程的调用链上；`.agents/codemap/flows/` 目录在本次快照中不存在（其他模块页面同样按约定引用而未编写），因此即使有流程页面也无法打开 (unverified)。
-��
+��

@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Automation.Peers;
 using Avalonia.Automation.Provider;
 using Avalonia.Controls;
@@ -211,6 +212,41 @@ public sealed class InteractionTests
             var copy = all.First(p => p.GetAutomationControlType() == AutomationControlType.Button && p.GetName() == "Copy");
             Assert.NotNull(copy.GetProvider<IInvokeProvider>());
             Assert.Contains(all, p => p.GetName() == "var x = 1;");
+            window.Close();
+        });
+    }
+
+    [Fact]
+    public async Task TableActions_SitOutsideTheGrid()
+    {
+        await HeadlessApp.Run(async () =>
+        {
+            var markdown = """
+                | 运行/轮次 | 日志打印 y_found | 实际参与计算 |
+                |---|---|---|
+                | 66/1 | 89.0287 | 88.7778 |
+                | 66/2 | 89.7578 | 89.7613 |
+                """;
+            var view = new MarkdownView { Markdown = markdown, Margin = new(16) };
+            var window = new Window { Width = 420, Height = 280, Content = view, Background = new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x18)) };
+            window.Show();
+            view.ApplyLatest();
+            await HeadlessApp.Settle();
+
+            var table = view.GetVisualDescendants().OfType<TableBlockView>().Single();
+            var cells = table.GetVisualChildren().OfType<TextSegmentView>().ToList();
+            var copy = table.GetVisualChildren().OfType<IconButton>().Single(b => AutomationProperties.GetName(b) == "Copy");
+            var fullscreen = table.GetVisualChildren().OfType<IconButton>().Single(b => AutomationProperties.GetName(b) == "Fullscreen");
+            Assert.NotEmpty(cells);
+            var gridTop = cells.Min(c => c.Bounds.Top);
+            // 复制 / 全屏在边框上方的操作条里，不与任何单元格重叠（issue：按钮在表头里会被文字盖住）
+            Assert.True(copy.Bounds.Bottom <= gridTop + 0.5);
+            Assert.True(fullscreen.Bounds.Bottom <= gridTop + 0.5);
+            Assert.All(cells, cell =>
+            {
+                Assert.False(cell.Bounds.Intersects(copy.Bounds));
+                Assert.False(cell.Bounds.Intersects(fullscreen.Bounds));
+            });
             window.Close();
         });
     }

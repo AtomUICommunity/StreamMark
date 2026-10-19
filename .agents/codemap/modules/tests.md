@@ -47,7 +47,7 @@ updated: 2026-10-16
 - Uses: `core-parsing-and-model` via `DocumentComposer(profile).Parse` — `tests/StreamMark.Core.Tests/Parsing/ComponentTests.cs:12`；块模型断言 `tests/StreamMark.Core.Tests/Parsing/MapperTests.cs:14`
 - Uses: `avalonia-text-rendering` / `avalonia-transcript` / `avalonia-images` / `avalonia-plugin-system` / `avalonia-selection` / `avalonia-extensions` via `ProjectReference` + `InternalsVisibleTo("StreamMark.Avalonia.Tests")` — `tests/StreamMark.Avalonia.Tests/StreamMark.Avalonia.Tests.csproj:16`、`src/StreamMark.Avalonia/Images/AssemblyInfo.cs:3`
 - Uses: 三个可选子包 via `ProjectReference` — `tests/StreamMark.Avalonia.Tests/StreamMark.Avalonia.Tests.csproj:17`（RaTeX）、`:18`（Highlighting.TextMate）、`:19`（Mermaid）；放行声明 `src/StreamMark.Highlighting.TextMate/StreamMark.Highlighting.TextMate.csproj:14`、`src/StreamMark.Mermaid/StreamMark.Mermaid.csproj:24`
-- Uses: `build-and-packaging` via `Directory.Build.targets`（非 packable 项目按 RID 把 `artifacts/native/<rid>/ratex_ffi.*` 复制进测试输出）与 `Directory.Packages.props:24`（xunit.v3 3.2.2 / Avalonia 12.1.3 集中版本）
+- Uses: `build-and-packaging` via `Directory.Build.targets`（非 packable 项目按 RID 把 `artifacts/native/<rid>/ratex_ffi.*` 复制进测试输出）与 `Directory.Packages.props:24`（xunit.v3 3.2.2 / Avalonia 12.1.4 集中版本）
 - Used by: `build-and-packaging` via CI 步骤 — `.github/workflows/ci.yml:76`（`dotnet test StreamMark.slnx -c Release --no-build`），`build-test` 依赖 `native-ratex`（`:53`、`:20`）
 - Used by: 其他模块的文档 — 各页面在 `## Tests` 段落引用具体测试文件
 - Used by: 没有代码引用测试项目：`StreamMark.slnx` 只把它们列在 `/tests/` 文件夹下
