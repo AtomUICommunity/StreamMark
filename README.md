@@ -183,6 +183,13 @@ foreach (var op in SnapshotDiff.Compute(applied, next)) { /* insert / update / r
 applied = next;
 ```
 
+## Gallery
+
+`samples/StreamMark.Gallery` is a native Markdown editor built on StreamMark: an AvaloniaEdit source editor with Markdown highlighting on the left, a live StreamMark preview on the right, plus the original AI chat demo. It has formatting commands and shortcuts, list continuation, outline, scroll sync, find in preview, light/dark themes, sample documents, and a "stream replay" that re-renders the current document as a streamed AI answer. See [docs/gallery.md](docs/gallery.md) for the feature list and plan.
+
+- Run it: `dotnet run --project samples/StreamMark.Gallery` (needs `./native/build.sh` first for math).
+- Test builds for all six desktop RIDs are published as GitHub pre-releases tagged `gallery-v*` (NativeAOT, no .NET install needed; unsigned).
+
 ## Building
 
 ```bash

@@ -7,7 +7,7 @@ StreamMark 是库 + 示例的单一 .NET 10 进程：没有服务端、没有 We
 | 运行时 | 说明 |
 |---|---|
 | 后台单逻辑工作者 | 解析在同一个逻辑工作者上串行执行（`StreamingDocument` 的提交队列 + 脏标记合并）；并发到达的追加只置脏，当前轮结束后处理最新文本，中间版本被跳过 |
-| 界面线程 | 每帧最多取一次 `Document.Latest`，按 `SnapshotDiff` 应用差异；排版、Avalonia 图元构建与绘制都在这里 |
+| 界面线程 | 每帧最多取一次 `Document.Latest`，按 `SnapshotDiff` 应用差异；逐行排版（`SegmentLayout`）与行视觉录制在这里。末尾渐显不在这里画：`TailFade` 在渲染线程的自定义视觉里逐帧绘制 |
 | 第三方后台任务 | 代码高亮、公式排版、图表渲染、图片加载各自在后台跑，回投前校验身份/代次（`CodeBlockState.RunHighlight`、`DiagramBlockView.StartRender`、`ImageSlot.Load`） |
 | 原生代码 | RaTeX（Rust）以 C ABI 动态库形式在进程内调用，库文件必须与二进制同目录或由 NuGet 包按 RID 提供 |
 

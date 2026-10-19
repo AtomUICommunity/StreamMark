@@ -11,6 +11,9 @@
         <PackageVersion Include="Avalonia.Skia" Version="$(AvaloniaVersion)" />
         <PackageVersion Include="Avalonia.Themes.Fluent" Version="$(AvaloniaVersion)" />
         <PackageVersion Include="Avalonia.Headless" Version="$(AvaloniaVersion)" />
+        <!-- 只给 Gallery 的源码编辑器用（库本身不依赖）；12.0.0 的 AOT 发布实测 0 个 IL 警告 -->
+        <PackageVersion Include="Avalonia.AvaloniaEdit" Version="12.0.0" />
+        <PackageVersion Include="AvaloniaEdit.TextMate" Version="12.0.0" />
         <!-- 主题适配：与 TKCode 使用的 AtomUI 版本一致 -->
         <PackageVersion Include="AtomUI.Core" Version="6.2.6" />
         <!-- 解析 / 渲染依赖 -->

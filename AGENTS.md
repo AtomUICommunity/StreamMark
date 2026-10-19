@@ -21,12 +21,14 @@ StreamMark：面向 AI 对话场景的流式 Markdown 渲染库，Avalonia 12 / 
 | 打包本地 NuGet | `tools/pack-local.sh <version>` | 产出 `artifacts/packages/*.nupkg`；重新打包必须升版本号 |
 | 基准 | `dotnet run -c Release --project bench/StreamMark.Benchmarks -- --filter '*'` | ShortRun，只看量级；结果记录在 [docs/benchmarks.md](docs/benchmarks.md) |
 | 流式 CPU 基准（真实窗口） | `tools/cpu-bench.sh [rid]` | NativeAOT 发布 `bench/StreamMark.CpuHarness` 并依次跑场景矩阵，结果追加到 `artifacts/cpu-bench.txt`；会打开窗口，运行期间保持可见。改动渲染、排版、节奏或会话面板后跑一次并与 [docs/benchmarks.md](docs/benchmarks.md) 对比 |
+| Gallery 打包 | AOT 冒烟那条命令发布到 `-o artifacts/gallery/<rid>` 并复制原生库后，`tools/package-gallery.sh <rid> <version>` | 产出 `artifacts/release/StreamMark.Gallery-<version>-<rid>.{zip,tar.gz}`；macOS 为 ad-hoc 签名的 `.app`（2026-10-19 在 osx-arm64 实测：解压后签名校验与 `--smoke` 通过） |
+| Gallery 预发布 | 推送 `gallery-v<version>` 标签，或手动运行 `Release Gallery` 工作流并填写版本号 | `.github/workflows/release-gallery.yml`：6 个 RID 发布（0 IL 警告）+ `--smoke` + 打包，最后建 GitHub 预发布；说明模板 `samples/StreamMark.Gallery/Packaging/release-notes.md` |
 | 测试截图 | 图片写到 `STREAMMARK_SNAPSHOT_DIR`，未设置时用测试输出目录下的 `snapshots/` | 只用于人工查看，没有基线比对 |
 
 ## 架构与边界
 
 - 依赖方向单向：`Core` → Markdig；`StreamMark.Avalonia` → Core；扩展包与主题包 → Avalonia（+ Core）。**Core 不得引用 Avalonia；Avalonia 不得引用任何扩展包或主题包**——扩展一律经 `Plugins/`、`Extensions/` 的接口注册。完整图与归属表见 [.agents/codemap/architecture.md](.agents/codemap/architecture.md)。
-- 解析只在工作线程：`Append` / `Complete` / `Reset` 可在任意线程调用，界面线程每帧最多取一次 `Latest` 并应用一次差异（`SnapshotReady` 在后台线程触发，必须回投界面线程）。
+- 解析只在工作线程：`Append` / `Complete` / `Reset` 可在任意线程调用，界面线程每帧最多取一次 `Latest` 并应用一次差异（`SnapshotReady` 在后台线程触发，必须回投界面线程）。节奏由显示它的视图交给窗口的帧推进（`MarkdownStream.SetFrameSource`）；未挂载时退回计时器，不要再改回固定节拍。
 - 唯一真相是只追加的源码缓冲；块与选区的身份都是「原始源码偏移」。块模型、快照、会话行模型都是派生数据，不得当作真相写回。
 - 视觉样式的真相是 Avalonia 资源里的 `Md.*` 键；`MarkdownStyle` 是解析后的不可变快照，只有 `MarkdownView` 与 `TranscriptPanel` 持有并下发。
 - 失败被吞掉是既有行为：解析异常保留旧快照（表现为界面停止更新），高亮异常被丢弃。排查「界面不动」时先看这两处，不要先怀疑视图层。
@@ -40,13 +42,14 @@ StreamMark：面向 AI 对话场景的流式 Markdown 渲染库，Avalonia 12 / 
 - 新增白名单 HTML 组件要动四处：`ComponentSpec` 注册、解析器插入顺序（`HtmlComponentBlockParser` 必须在 `HtmlBlockParser` 之前，行内组件解析器在 `AutolinkInlineParser` 之前）、映射器、块或行内视图。未知元素整组按源码显示且绝不执行（含 `script` / `style` / `iframe`）。
 - 行内 HTML 的文字样式有两条独立实现（`MarkdigMapper` 里的标签栈与 `HtmlMapper.HtmlInlineBuilder`）；加样式必须两处都改。
 - 新增块视图：`BlockViewFactory` 的 `ViewTypeFor` / `CreateBuiltIn` / `CanReuseBuiltIn` 三个分支都要加，漏第三个会让视图在每次快照更新时被重建。片段编号必须与 `BlockText.Segments` 的收集顺序一致，否则选区与复制错位。
-- 新增 `Md.*` 键：`MarkdownResourceKeys` 常量 + `MarkdownStyle` 的 required 属性与解析 + `Themes/StreamMarkTheme.axaml` 的 Light/Dark 字典 + 消费点（+ 可选的 AtomUI 映射）。键名写错或别名解析失败不会报错，只会静默回落。
+- 新增 `Md.*` 键：`MarkdownResourceKeys` 常量 + `MarkdownStyle` 的 required 属性与解析 + `Themes/StreamMarkTheme.axaml` 的 Light/Dark 字典 + 消费点（+ 可选的 AtomUI 映射）。键名写错或别名解析失败不会报错，只会静默回落。`Md.SearchHighlightBackground` / `Md.SearchCurrentBackground` 目前只有回退值、不在默认字典和 AtomUI 映射里——这是例外，不要当成新键的模板。
 - 主题里写 `MarkdownResourceAlias`，不要写画刷或 `DynamicResource`：宿主 token 在窗口 / 主题作用域，从字典位置向上查找找不到会让文字变透明。宿主主题要注册在 `StreamMarkTheme` 之后。
 - 文档必须用 `services.Profile` 创建（`MarkdownEntry.FromText(text, services.Profile)`、`new MarkdownStream(profile: …)`），否则插件注册的标签不会被解析；`MarkdownView` 上先 `SetServices` 再设 `Markdown`，反过来文档会留着旧方言。
 - 插件 `Configure` 只登记委托与工厂（NativeAOT，禁反射）；`PluginRegistry` 首次访问即固化，之后修改 `Plugins` 无效。同名组件后登记者覆盖先登记者是设计内行为。
 - 选区坐标只存值（`Entry` / `BlockKey` / `Segment` / `Offset`），不得持有视图引用；复制必须经 `ISelectionHost.GetSnapshot(entry)` 取模型，否则被虚拟化回收的块复制不到。
 - `TextRunCache` 是 Avalonia 不稳定 API，只在 `TextSegmentView` / `SegmentLayout` 内用 `#pragma warning disable CS0618` 限定；`InvalidateFrom` 的失效位置必须是差异点所在段落的起点，否则每次追加都会变成一次硬换行。
 - 文本片段按行排版（`SegmentLayout`）、按行录制（每行一个 `SegmentLineVisual`）：内容变化必须经 `TextSegmentView.Set` 算出差异点再 `InvalidateLayout(from)`，只从差异点所在行的前一行重排；直接整段失效会让流式长段落退回 O(段落长度) 每帧。增量结果必须与整段排版逐行一致（`IncrementalLayoutTests`）。
+- 回退字体必须与取 run 的起点、以及进程内之前匹配过的字符无关（`TextSegmentView.MatchFallback`）：否则同一段文字逐行排版和整段排版会断在不同位置（Windows 上曾因此失败）。
 - 末尾渐显在渲染线程（`TailFade` 的 `CompositionCustomVisualHandler`）：渐显层只能画字形与矩形，含装饰线或内嵌对象的文字不参与渐显；不要再加每帧 `RequestAnimationFrame` → `InvalidateVisual` 的循环。
 - NativeAOT：正则一律 `[GeneratedRegex]`、JSON 一律源生成、主题用 `x:Class` 编译加载、不用反射绑定。裁剪 / AOT 警告按 `Directory.Build.props` 的列表视为错误，CI 另外要求发布日志里 0 个 IL 警告。
 - 包版本只写在 `Directory.Packages.props`，偏离用 `VersionOverride`（见 `src/StreamMark.Mermaid` 的 Svg.Skia）。新项目要加进 `StreamMark.slnx`；放在 `src/` 下的项目自动获得可打包、AOT 兼容与 XML 文档属性。
@@ -63,7 +66,7 @@ StreamMark：面向 AI 对话场景的流式 Markdown 渲染库，Avalonia 12 / 
 
 ## 仓库地图
 
-详细地图在 `.agents/codemap/`（生成时仓库 HEAD 是 `9b0e08b`，工作树同时有未提交改动；地图可能落后于代码——不一致时以代码为准并顺手修页面）。动手前先读对应页面：
+详细地图在 `.agents/codemap/`（核对到 `8d344a6`，工作树同时有未提交的 Gallery 编辑器与发布脚本改动；地图可能落后于代码——不一致时以代码为准并顺手修页面）。动手前先读对应页面：
 
 - 改动解析、切分、快照、节奏 → `.agents/codemap/modules/core-streaming.md`、`modules/remend-and-offsetmap.md`
 - 改动 Markdig 方言、白名单组件、HTML/CSS 映射 → `.agents/codemap/modules/core-parsing-and-model.md`

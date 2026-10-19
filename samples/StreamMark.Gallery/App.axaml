@@ -1,0 +1,39 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:themes="clr-namespace:StreamMark.Avalonia.Themes;assembly=StreamMark.Avalonia"
+             x:Class="StreamMark.Gallery.GalleryApp"
+             Name="StreamMark Gallery"
+             RequestedThemeVariant="Default">
+    <!-- 样式在 XAML 里引入：编译期解析，NativeAOT 安全（代码里 new StyleInclude 会产生 IL2026） -->
+    <Application.Styles>
+        <FluentTheme />
+        <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
+        <themes:StreamMarkTheme />
+    </Application.Styles>
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="Gallery.WindowBackground" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="Gallery.ChromeBackground" Color="#F5F6F8" />
+                    <SolidColorBrush x:Key="Gallery.PaneBackground" Color="#FAFBFC" />
+                    <SolidColorBrush x:Key="Gallery.Divider" Color="#1F000000" />
+                    <SolidColorBrush x:Key="Gallery.SecondaryText" Color="#8C000000" />
+                    <SolidColorBrush x:Key="Gallery.Accent" Color="#1677FF" />
+                    <SolidColorBrush x:Key="Gallery.BubbleBackground" Color="#EEF1F5" />
+                    <SolidColorBrush x:Key="Gallery.OutlineHover" Color="#0F000000" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="Gallery.WindowBackground" Color="#141418" />
+                    <SolidColorBrush x:Key="Gallery.ChromeBackground" Color="#1C1C22" />
+                    <SolidColorBrush x:Key="Gallery.PaneBackground" Color="#18181D" />
+                    <SolidColorBrush x:Key="Gallery.Divider" Color="#26FFFFFF" />
+                    <SolidColorBrush x:Key="Gallery.SecondaryText" Color="#8CFFFFFF" />
+                    <SolidColorBrush x:Key="Gallery.Accent" Color="#4C8DFF" />
+                    <SolidColorBrush x:Key="Gallery.BubbleBackground" Color="#2A2A33" />
+                    <SolidColorBrush x:Key="Gallery.OutlineHover" Color="#14FFFFFF" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

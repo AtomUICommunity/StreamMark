@@ -1,6 +1,6 @@
 # 领域概念
 
-StreamMark 没有数据库、没有网络 API、没有配置文件：所有状态都在进程内，唯一落盘的东西是图片磁盘缓存与测试截图。下表把业务名词映射到代码、界面与流程。
+StreamMark 库没有数据库、没有网络 API、没有配置文件：库的状态都在进程内。库侧会落盘的只有图片磁盘缓存；测试截图写到 `STREAMMARK_SNAPSHOT_DIR`（或测试输出目录下的 `snapshots/`）。Gallery 示例另外把窗口设置写到应用数据目录。下表把业务名词映射到代码、界面与流程。
 
 | 概念 | 一句话定义 | 定义位置 | 持久化 | 出现界面 | 相关流程 |
 |---|---|---|---|---|---|
@@ -34,3 +34,13 @@ StreamMark 没有数据库、没有网络 API、没有配置文件：所有状�
 | 作者颜色模式 | HTML 作者颜色的处理：可读（对比度不足换主题色）/ 精确 / 忽略 | `src/StreamMark.Avalonia/Extensions/MarkdownServices.cs` › `HtmlColorMode`、`Rendering/HtmlPaint.cs` | 无 | 原始 HTML 渲染 | [raw-html-render](flows/raw-html-render.md) |
 | 显示列表协议 | RaTeX 原生库返回的排版结果（em 单位、Y 向下、基线 y=height，扁平条目便于前向兼容） | `src/StreamMark.RaTeX/DisplayList.cs` › `DisplayList` | 无 | 公式块 | — |
 | 语言别名 | 代码围栏语言到 TextMate 语法的三级解析（别名表 → language id → 扩展名） | `src/StreamMark.Highlighting.TextMate/LanguageAliases.cs` › `LanguageAliases` | 无 | 代码块着色 | — |
+ | `src/StreamMark.Avalonia/Rendering/TailFade.cs` › `TailFade` | 无 | 流式文本的尾部 | [streaming-token-to-view](flows/streaming-token-to-view.md) |
+| 查找 | 在块模型上按片段搜索，结果是选区坐标，内容不在屏幕上也能找到 | `src/StreamMark.Avalonia/Selection/SearchModel.cs` › `SearchModel` | 无 | 查找高亮与当前项 | [text-selection-copy](flows/text-selection-copy.md) |
+| 大纲 | 从快照抽出标题，跳转目标是 `TextPoint` | `src/StreamMark.Avalonia/Selection/DocumentNavigation.cs` › `DocumentNavigation.Outline` | 无 | 大纲列表与跳转 | [text-selection-copy](flows/text-selection-copy.md) |
+| 右键菜单 | 按命中位置组装复制、链接与代码块命令 | `src/StreamMark.Avalonia/Selection/MarkdownContextMenu.cs` › `MarkdownContextMenu` | 无 | 文档与会话的右键菜单 | [text-selection-copy](flows/text-selection-copy.md) |
+| 差异视图 | `diff` / `patch` 围栏的统一或并排呈现；用户切换后的模式按块记在块状态里 | `src/StreamMark.Avalonia/Rendering/DiffBlockView.cs` › `DiffBlockView`、`DiffViewMode` | 无（键 `diff.mode`，在 `BlockStateStore`） | 差异围栏 | [streaming-token-to-view](flows/streaming-token-to-view.md) |
+| 链接策略 | 默认只放行 https / http / mailto；相对地址与文内锚点交给宿主，文字像另一个网址时要求确认 | `src/StreamMark.Avalonia/Extensions/LinkPolicy.cs` › `LinkPolicy` | 无 | 可点击链接 | [text-selection-copy](flows/text-selection-copy.md) |
+| 引用来源 | 按 id 提供标题与 URL，供 `<Citation>` 显示 | `src/StreamMark.Avalonia/Extensions/ISourceProvider.cs` › `CitationSource` | 无 | 引用标签 | [plugin-registration](flows/plugin-registration.md) |
+| Mermaid 配色 | 默认复刻 mermaid.js（暗色 dark、亮色 default）；半透明宿主色先叠到底色上 | `src/StreamMark.Mermaid/MermaidTheme.cs` › `MermaidTheme` | 无 | 图表块 | — |
+| 图片磁盘缓存 | 把取回的图片字节和旁路元数据写到调用方指定的目录 | `src/StreamMark.Avalonia/Images/ImageDiskCache.cs` › `ImageDiskCache` | `DirectoryPath` 下的 `.bin` 与 `.json` | 再次显示同一张远程图片 | — |
+| Gallery 设置 | 示例程序的主题、布局与最近文件；冒烟测试关掉持久化 | `samples/StreamMark.Gallery/GallerySettings.cs` › `GallerySettings` | 应用数据目录 `StreamMark.Gallery/settings.json`（`Persist = false` 时不写） | Gallery 窗口 | — |

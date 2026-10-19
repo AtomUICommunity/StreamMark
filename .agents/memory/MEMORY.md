@@ -18,9 +18,10 @@
 - [StreamPacer.GetRevealTime 还没有生产消费者](pacer-reveal-time-unwired.md) — 排查渐显不生效时的第一个怀疑对象
 - [CI runner 的字体环境与本机不同](ci-font-environments.md) — Linux 只有 DejaVu、macOS 苹方 600 加载成 Medium；字体断言按真实加载结果
 - [回退字体曾依赖取 run 的起点与匹配历史](fallback-font-position-history.md) — Windows 上流式断行与整段排版不一致的原因（alpha.19 修复）
-- [差异视图正在加入（2026-10-16）](diff-view-in-flight.md) — 当前在飞的特性，以及它会收紧哪些不变量
 - [Mermaid 配色默认复刻 mermaid.js，宿主半透明色必须叠底色](mermaid-theme-mermaidjs.md) — 白底白字的来历、`DataPalette` 的蓝色陷阱、高图不再封顶 900px
 - [表格操作按钮在网格外的操作条里](table-actions-outside-grid.md) — 复制按钮曾盖在表头上，负坐标 / Popup 点不中
+- [编辑器式预览用 Document + Load，不用 Markdown 属性](editor-preview-document-path.md) — 后者每次清空全部块视图；换文件要换新文档
+- [AvaloniaEdit 12 的 ScrollToVerticalOffset 是空实现](avaloniaedit-scroll-noop.md) — Gallery 里滚动编辑器用 ScrollTo
 
 ## Reference
 - [上游与依赖的出处、许可和调研材料](upstream-and-license-references.md) — 改依赖或许可文本之前先读它
