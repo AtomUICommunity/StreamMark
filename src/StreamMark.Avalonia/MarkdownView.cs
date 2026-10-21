@@ -26,6 +26,9 @@ public class MarkdownView : Control, ISelectionHost
     public static readonly StyledProperty<MarkdownStream?> StreamProperty =
         AvaloniaProperty.Register<MarkdownView, MarkdownStream?>(nameof(Stream));
 
+    public static readonly StyledProperty<bool> IsTaskInteractionEnabledProperty =
+        AvaloniaProperty.Register<MarkdownView, bool>(nameof(IsTaskInteractionEnabled));
+
     /// <summary>链接点击（来自内部任一文本片段）。</summary>
     public static readonly RoutedEvent<LinkClickedEventArgs> LinkClickedEvent = TextSegmentView.LinkClickedEvent;
 
@@ -43,6 +46,7 @@ public class MarkdownView : Control, ISelectionHost
         MarkdownProperty.Changed.AddClassHandler<MarkdownView>((view, _) => view.OnSourceChanged());
         DocumentProperty.Changed.AddClassHandler<MarkdownView>((view, _) => view.OnSourceChanged());
         StreamProperty.Changed.AddClassHandler<MarkdownView>((view, _) => view.OnSourceChanged());
+        IsTaskInteractionEnabledProperty.Changed.AddClassHandler<MarkdownView>((view, _) => view.InvalidateContext());
         MarkdownServices.ServicesProperty.Changed.AddClassHandler<MarkdownView>((view, _) => view.InvalidateContext());
         MarkdownServices.ImageBaseUriProperty.Changed.AddClassHandler<MarkdownView>((view, _) => view.InvalidateContext());
     }
@@ -87,6 +91,16 @@ public class MarkdownView : Control, ISelectionHost
         set => SetValue(StreamProperty, value);
     }
 
+    /// <summary>
+    /// 任务列表的复选框是否可以点击（或聚焦后按空格 / 回车）。默认关闭，复选框只读；
+    /// 启用后用户操作只会触发 <see cref="TaskToggleRequested"/>，由宿主决定是否修改原文。
+    /// </summary>
+    public bool IsTaskInteractionEnabled
+    {
+        get => GetValue(IsTaskInteractionEnabledProperty);
+        set => SetValue(IsTaskInteractionEnabledProperty, value);
+    }
+
     public SelectionModel Selection { get; } = new();
 
     public SelectionController SelectionController => _selectionController;
@@ -99,6 +113,13 @@ public class MarkdownView : Control, ISelectionHost
         add => AddHandler(LinkClickedEvent, value);
         remove => RemoveHandler(LinkClickedEvent, value);
     }
+
+    /// <summary>用户请求切换某个任务复选框（需要 <see cref="IsTaskInteractionEnabled"/>）；宿主接受时自行修改原文。</summary>
+    public event EventHandler<TaskToggleRequestedEventArgs>? TaskToggleRequested;
+
+    /// <summary>请求是否仍然对应当前显示的文档：<see cref="DocumentId"/> 与快照版本都没有变。宿主异步处理请求时用它拒绝过期的请求。</summary>
+    public bool IsCurrent(TaskToggleRequestedEventArgs request) =>
+        request.DocumentId == DocumentId && _presenter.Applied is { } snapshot && snapshot.Version == request.Version;
 
     private StreamingDocument? EffectiveDocument => Stream?.Document ?? Document ?? _ownDocument;
 
@@ -180,7 +201,21 @@ public class MarkdownView : Control, ISelectionHost
     }
 
     private RenderContext CreateContext() =>
-        new(MarkdownStyle.Resolve(this), MarkdownServices.GetServices(this), Selection, 0, Stream?.State, _state, MarkdownServices.GetImageBaseUri(this));
+        new(MarkdownStyle.Resolve(this), MarkdownServices.GetServices(this), Selection, 0, Stream?.State, _state, MarkdownServices.GetImageBaseUri(this))
+        {
+            TaskToggle = IsTaskInteractionEnabled ? RequestTaskToggle : null,
+        };
+
+    // 只在快照完整时发请求：流式中源码还会变，点击的标记位置可能马上失效
+    private bool RequestTaskToggle(Core.Model.ListItemBlock item)
+    {
+        if (item.Task is not { } isChecked || item.TaskMarker.Length == 0 || _presenter.Applied is not { IsComplete: true } snapshot || TaskToggleRequested is not { } handler)
+        {
+            return false;
+        }
+        handler(this, new TaskToggleRequestedEventArgs(DocumentId, snapshot.Version, item.TaskMarker, isChecked));
+        return true;
+    }
 
     private void InvalidateContext()
     {
