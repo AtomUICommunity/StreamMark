@@ -1,6 +1,8 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Avalonia;
+using Avalonia.Automation.Peers;
+using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.TextFormatting;
 using StreamMark.Avalonia.Selection;
@@ -197,12 +199,27 @@ public sealed class ListBlockView : BlockView
     public override IEnumerable<ISelectableSegment> Segments() => _items.SelectMany(i => i.Segments());
 }
 
-/// <summary>列表项：左侧绘制项目符号 / 序号 / 复选框，右侧是子块。</summary>
+/// <summary>
+/// 列表项：左侧绘制项目符号 / 序号 / 复选框，右侧是子块。
+/// 上下文带有 <see cref="RenderContext.TaskToggle"/> 时任务项的复选框可交互（点击、聚焦后按空格或回车），
+/// 只是向宿主发出"请求"，视图自己的勾选状态仍然只由快照决定。
+/// </summary>
 public sealed class ListItemBlockView : StackBlockView
 {
+    private static readonly Cursor HandCursor = new(StandardCursorType.Hand);
+
     private TextLayout? _marker;
     private string _markerText = "";
     private bool? _task;
+    private Rect _taskBox;
+    private bool _pressedOnBox;
+
+    public ListItemBlockView()
+    {
+        // 聚焦环随焦点出现 / 消失
+        GotFocus += (_, _) => InvalidateVisual();
+        LostFocus += (_, _) => InvalidateVisual();
+    }
 
     public string Marker
     {
@@ -233,6 +250,9 @@ public sealed class ListItemBlockView : StackBlockView
 
     public bool Tight { get; set; }
 
+    /// <summary>复选框是否可交互：任务项，且宿主启用了任务交互。</summary>
+    internal bool IsTaskInteractive => _task is not null && Context?.TaskToggle is not null;
+
     private double Indent => Math.Round((Context?.Style.FontSize ?? 14) * (_markerText.Length > 2 ? 2.0 : 1.6));
 
     protected override Thickness ContentPadding => new(Indent, 0, 0, 0);
@@ -245,9 +265,73 @@ public sealed class ListItemBlockView : StackBlockView
         {
             _marker = null;
         }
+        // 只有可交互的任务项才是 Tab 停靠点
+        Focusable = IsTaskInteractive;
+        if (!IsTaskInteractive)
+        {
+            Cursor = null;
+            _pressedOnBox = false;
+        }
         UpdateChildren(context, ((ListItemBlock)block).Children, topKey, ref segment);
         InvalidateVisual();
     }
+
+    /// <summary>向宿主请求切换勾选状态；没有启用交互、不是任务项或宿主没有接收时返回 false。</summary>
+    internal bool RequestToggle() => IsTaskInteractive && Block is ListItemBlock item && Context!.TaskToggle!(item);
+
+    // 命中区域比画出来的复选框大一圈，方便点击
+    private bool HitsBox(Point point) => _taskBox.Width > 0 && _taskBox.Inflate(3).Contains(point);
+
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+        if (IsTaskInteractive && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed && HitsBox(e.GetPosition(this)))
+        {
+            _pressedOnBox = true;
+            e.Pointer.Capture(this);
+            e.Handled = true;
+        }
+    }
+
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+        Cursor = IsTaskInteractive && HitsBox(e.GetPosition(this)) ? HandCursor : null;
+    }
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+        if (!_pressedOnBox)
+        {
+            return;
+        }
+        _pressedOnBox = false;
+        e.Pointer.Capture(null);
+        e.Handled = true;
+        if (HitsBox(e.GetPosition(this)))
+        {
+            RequestToggle();
+        }
+    }
+
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+    {
+        base.OnPointerCaptureLost(e);
+        _pressedOnBox = false;
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (!e.Handled && e.KeyModifiers == KeyModifiers.None && e.Key is Key.Space or Key.Enter && IsTaskInteractive)
+        {
+            e.Handled = true;
+            RequestToggle();
+        }
+    }
+
+    protected override AutomationPeer OnCreateAutomationPeer() => new Automation.TaskItemAutomationPeer(this);
 
     public override void Render(DrawingContext context)
     {
@@ -270,10 +354,22 @@ public sealed class ListItemBlockView : StackBlockView
             var box = Math.Round(style.FontSize * 0.95);
             var run = new CheckboxRun(isChecked, style.FontSize, style.SecondaryForeground, style.LinkForeground,
                 new GenericTextRunProperties(new Typeface(style.FontFamily), style.FontSize));
-            run.Draw(context, new Point(Indent - box - style.FontSize * 0.45, baseline - run.Baseline));
+            var boxOrigin = new Point(Indent - box - style.FontSize * 0.45, baseline - run.Baseline);
+            run.Draw(context, boxOrigin);
+            _taskBox = new Rect(boxOrigin, new Size(box, box));
+            if (IsTaskInteractive)
+            {
+                // 透明填充让复选框一带能接收指针（没有绘制内容的区域不参与命中）
+                context.FillRectangle(Brushes.Transparent, _taskBox.Inflate(3));
+                if (IsFocused)
+                {
+                    context.DrawRectangle(new Pen(style.LinkForeground, 1.5), _taskBox.Inflate(2), 3);
+                }
+            }
             return;
         }
 
+        _taskBox = default;
         _marker ??= new TextLayout(_markerText, new Typeface(style.FontFamily), _markerText.Length == 1 ? style.FontSize * 1.1 : style.FontSize,
             style.ListMarkerForeground, TextAlignment.Right);
         var markerBaseline = _marker.TextLines.Count > 0 ? _marker.TextLines[0].Baseline : _marker.Height;

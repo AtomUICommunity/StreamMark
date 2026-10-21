@@ -19,6 +19,7 @@ updated: 2026-10-16
 | `BackslashMathExtension` | `src/StreamMark.Core/Parsing/BackslashMathExtension.cs:BackslashMathExtension` | 公开扩展：`\(…\)` / `\[…\]` 数学定界符 |
 | `MarkdigMapper.MapDocument` | `src/StreamMark.Core/Parsing/MarkdigMapper.cs:MapDocument` | `internal`，整篇 Markdig 文档 → 块模型；`DocumentComposer.Parse` 是唯一生产调用方（`DocumentComposer.cs:115`） |
 | `OffsetMap.Create` / `ToSource` | `src/StreamMark.Core/Parsing/OffsetMap.cs:Create` | `internal`，修补后位置 → 原始源码位置，块区间与 key 都经它落回原文 |
+| `SourceText.ToLocation` / `ToOffset` | `src/StreamMark.Core/Model/SourceText.cs:SourceText` | public，源码偏移 ↔ 行 / 列（0 起始）的约定：偏移 = UTF-16 下标，`\r\n` 占 2 个单位且不归一化，换行符为 `\n` / `\r\n` / 单独 `\r`；与 `SourceRange` 同一套单位 |
 | `HtmlElements` | `src/StreamMark.Core/Html/HtmlTree.cs:HtmlElements` | 支持元素集合（Block / Inline / Void / Containers），是"未知元素按源码显示"的判定依据 |
 | `HtmlTreeBuilder` / `HtmlMapper` | `src/StreamMark.Core/Html/HtmlTree.cs:HtmlTreeBuilder`、`src/StreamMark.Core/Html/HtmlMapper.cs:HtmlMapper` | public，但当前只有 `MarkdigMapper` 调用（`MarkdigMapper.cs:86`、`:125`）；测试直接驱动构建器（`tests/StreamMark.Core.Tests/Html/HtmlTests.cs:190`） |
 | `CssStyle` | `src/StreamMark.Core/Html/CssStyle.cs:CssStyle` | public，`FromAttributes` / `Apply` / `TryParseLength` / `TryParseColor` / `ImageSize`；渲染层也读它的钳制常量（`TextSegmentView.cs:929`） |
@@ -88,6 +89,7 @@ updated: 2026-10-16
 - **流式半截标签被丢弃而非按源码显示** — `Feed` 遇到 `TryRead` 失败且本行再没有 `>` 时，把剩余文本整段丢掉等下一批（`HtmlTree.cs:144-150`）；这是 `Streaming_PartialHtml_NeverShowsRawTags` 守护的性质（`tests/StreamMark.Core.Tests/Html/HtmlTests.cs:202`）。
 - **一行只有自闭合/行内组件时，块解析器主动交回段落解析器** — 否则 CommonMark 会把它当第 7 类 HTML 块按原文显示（`HtmlComponentExtension.cs:94-99`）。
 - **任务复选框从段落文本里"提升 + 摘除"** — 映射器把首个行内对象识别为 `TaskCheckbox` 后提升为 `ListItemBlock.Task`，并同步平移/裁剪文本、span 与后续对象偏移（`MarkdigMapper.cs:241-244`、`:StripLeadingObject`）；改动这个逻辑必须同时处理占位字符后的那个空格。
+- **任务标记的源码区间 `ListItemBlock.TaskMarker`** — 来自 Markdig `TaskList` 行内节点的 `Span`，经 `OffsetMap` 回写成源码偏移（`MarkdigMapper.MapList`），共 3 个字符（`[ ]` / `[x]` / `[X]`），不是任务项时长度为 0。它进了 `ComputeFingerprint`，但记的是**相对列表项起点**的位置：列表整体平移指纹不变，标记在项内位置变了（项目符号后多空格）指纹才变；漏进指纹的话，完成后标记区间变化不会产生 Update，视图会拿着旧区间向宿主发请求 — `tests/StreamMark.Core.Tests/Parsing/TaskMarkerTests.cs`。
 - **多个顶层 HTML 元素合并成一个块时用 `Tag="#fragment"`** — 顶层块的 `Key` 是源码起点、必须唯一，所以不能把第一个子元素的 tag 当身份（`MarkdigMapper.cs:139-142`、`Model/Blocks.cs:HtmlBoxBlock`）。
 - **软换行两侧都是 CJK 时不插空格** — 两处独立实现，Markdown 侧 `InlineBuilder.SoftBreak`（`MarkdigMapper.cs:567-573`）、HTML 侧 `HtmlInlineBuilder.AppendCollapsed`（`HtmlMapper.cs:469-507`）；字符区间是复制的，改一处不会同步另一处。
 - **属性除了读值不要依赖哈希** — `ComponentAttributes.GetHashCode` 只返回 `Items.Length`（`InlineContent.cs:79`），`Equals` 才是逐项比较（`:77`）；拿它当字典键会严重退化。

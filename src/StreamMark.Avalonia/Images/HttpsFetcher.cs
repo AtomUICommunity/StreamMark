@@ -16,7 +16,7 @@ public sealed class HttpsFetcher : IImageFetcher, IDisposable
 
     /// <summary>使用内置的 <see cref="SocketsHttpHandler"/>（无 Cookie、不自动重定向、自动解压）。</summary>
     public HttpsFetcher()
-        : this(CreateDefaultHandler(), disposeHandler: true)
+        : this(CreatePlatformHandler(), disposeHandler: true)
     {
     }
 
@@ -27,6 +27,13 @@ public sealed class HttpsFetcher : IImageFetcher, IDisposable
         _client = new HttpClient(handler, disposeHandler) { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
         _ownsClient = true;
     }
+
+    /// <summary>
+    /// 浏览器没有 <see cref="SocketsHttpHandler"/>（它的 Cookie、自动重定向等设置会抛 <see cref="PlatformNotSupportedException"/>），
+    /// 改用平台处理器。浏览器的 fetch 自动跟随重定向，因此逐跳策略检查只在桌面生效。
+    /// </summary>
+    private static HttpMessageHandler CreatePlatformHandler() =>
+        OperatingSystem.IsBrowser() ? new HttpClientHandler() : CreateDefaultHandler();
 
     /// <summary>创建默认处理器。</summary>
     public static SocketsHttpHandler CreateDefaultHandler() => new()

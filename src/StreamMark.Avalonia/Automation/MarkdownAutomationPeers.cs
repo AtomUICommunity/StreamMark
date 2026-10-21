@@ -67,3 +67,32 @@ public sealed class MarkdownDocumentAutomationPeer(Control owner) : ControlAutom
 
     protected override bool IsControlElementCore() => true;
 }
+
+/// <summary>
+/// 任务列表项：控件类型为 CheckBox，开关状态取自模型；<see cref="Toggle"/> 与点击一样只是向宿主发出请求
+/// （宿主没有启用任务交互、或不是任务项时什么都不做）。
+/// </summary>
+public sealed class TaskItemAutomationPeer(ListItemBlockView owner) : ControlAutomationPeer(owner), IToggleProvider
+{
+    private ListItemBlockView Item => (ListItemBlockView)Owner;
+
+    protected override AutomationControlType GetAutomationControlTypeCore() =>
+        Item.Task is null ? AutomationControlType.ListItem : AutomationControlType.CheckBox;
+
+    protected override string? GetNameCore() =>
+        AutomationProperties.GetName(Owner) is { Length: > 0 } name ? name
+        : Item.Segments().FirstOrDefault()?.Text;
+
+    protected override bool IsContentElementCore() => true;
+
+    protected override bool IsControlElementCore() => true;
+
+    public ToggleState ToggleState => Item.Task switch
+    {
+        true => ToggleState.On,
+        false => ToggleState.Off,
+        _ => ToggleState.Indeterminate,
+    };
+
+    public void Toggle() => Item.RequestToggle();
+}

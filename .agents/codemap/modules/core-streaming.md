@@ -15,9 +15,11 @@ updated: 2026-10-16
 | `StreamingDocument` | `src/StreamMark.Core/Streaming/StreamingDocument.cs:16` | 唯一公开的门面：`Append` / `Complete` / `Reset` / `Load` / `LoadNow`，任意线程可调 |
 | `StreamingDocument.Append`/`Complete`/`Reset` | `src/StreamMark.Core/Streaming/StreamingDocument.cs:65`、`:84`、`:99` | 提交文本并唤醒后台工作者；`Complete` 之后 `Append` 抛 `InvalidOperationException`（`:75`） |
 | `StreamingDocument.Latest` / `SnapshotReady` | `src/StreamMark.Core/Streaming/StreamingDocument.cs:47`、`:50` | 取快照的两种方式：轮询 + 事件（事件在**后台线程**触发，注释要求处理函数尽快返回） |
+| `StreamingDocument.Version` / `.Load` | `src/StreamMark.Core/Streaming/StreamingDocument.cs` | `Version`：最新提交的源码版本，`DocumentSnapshot.Version` 追上它才说明最新文本已解析完（视图用它丢弃刷新时的过期快照）。`Load` 是**原子**的（单次加锁清空 + 写入 + 标记完成），工作线程取不到「已清空但未完成」的中间状态 |
 | `StreamingDocument.WhenIdle` | `src/StreamMark.Core/Streaming/StreamingDocument.cs:186` | 测试与 `Load` 路径用的"已处理完"信号 |
 | `DocumentSnapshot` | `src/StreamMark.Core/Streaming/DocumentSnapshot.cs:11` | 冻结块 + 尾部块的只读视图；`Version` / `Generation` / `SourceLength` / `IsComplete` |
 | `SnapshotDiff.Compute` | `src/StreamMark.Core/Streaming/SnapshotDiff.cs:24` | 把快照对比算成顺序可应用的 `DiffOp` 列表（这是渲染层的唯一增量入口） |
+| `SnapshotEdit.Compute` | `src/StreamMark.Core/Streaming/SnapshotEdit.cs` | 宿主整篇替换文本后的新旧快照对齐：公共前缀 / 后缀 + 中间按内容做最长公共子序列（块数乘积 > 100 万退回按位置）。输出仍是 Insert / Update / Remove（平移的块用 Update，所以**没有**新增 `DiffKind`），外加每个旧块的去向 `BlockFate`（`Unchanged` / `Shifted` / `Replaced` / `Deleted`）与 `MapKey`（旧源码偏移 → 新偏移） |
 | `StreamPacer` | `src/StreamMark.Core/Pacing/StreamPacer.cs:60` | 突发网络分片 → 平滑显示节奏的纯算法（无计时器，时间由调用方传入） |
 | `DocumentComposer`（internal） | `src/StreamMark.Core/Streaming/DocumentComposer.cs:15` | 后台工作线程独占的组装器：`Update` / `Finish` / `Reset` / `FrozenEnd` |
 | `StreamSegmenter`（internal） | `src/StreamMark.Core/Streaming/StreamSegmenter.cs:12` | 冻结边界扫描器 + 未闭合围栏代码块的快速路径探针 |
@@ -77,6 +79,8 @@ updated: 2026-10-16
 - To 加一种差异操作：`DiffKind`（`src/StreamMark.Core/Streaming/SnapshotDiff.cs:5`）是 `byte` 枚举，`DocumentPresenter.Apply`（`src/StreamMark.Avalonia/Rendering/DocumentPresenter.cs:35`）与 `TranscriptPanel`（`src/StreamMark.Avalonia/Transcript/TranscriptPanel.cs:276`）各有一份 `switch`，**必须同步改三处**；漏改 → 新操作被静默忽略，控件与快照脱节。
 
 ## Invariants and traps
+- **`SnapshotDiff` 对「宿主整篇替换」是错的工具**：它按源码起点（`Key`）归并，在前面增删文字会让后面所有块 `Key` 偏移，全部被当成删除再插入，视图和块状态都丢。整篇替换走 `SnapshotEdit`（按内容对齐）；两者的 `DiffOp` 语义相同，`DocumentPresenter` 共用同一段应用逻辑 — see `src/StreamMark.Core/Streaming/SnapshotEdit.cs`、`tests/StreamMark.Core.Tests/Streaming/SnapshotEditTests.cs`（含随机编辑下「应用 ops 得到新文档」的属性测试）。
+- **`SnapshotEdit` 的配对不能只按位置**：一次刷新里有两处编辑（例如开头增加、末尾删除）时前缀与后缀都对不上，中间若按位置硬配对，会把状态和选区配到不相干的块上 — `TwoSeparateEdits_*` 守这条。`Shifted` 的位移量是**每个块自己的**（`New.Key - Old.Key`），不是全局一个 delta。
 - **冻结前缀永不重解析**：`DocumentComposer.Update` 只解析 `[oldFrozen, newFrozen)` 一次，之后的快照直接复用这些对象 — see `src/StreamMark.Core/Streaming/DocumentComposer.cs:66`。因此冻结片段里**只保留与位置无关的 remend 转义修正**（singleTilde / comparisonOperators），否则已完整的文本会被"补全" — see `src/StreamMark.Core/Streaming/DocumentComposer.cs:17`、`docs/streaming-rules.md:45`。
 - **永远不冻结最后一个块**：`CanCut` 需要"下一行已到达"才能确认前一块结束 — see `src/StreamMark.Core/Streaming/StreamSegmenter.cs:273`；测试 `LastBlock_IsNeverFrozen`（`tests/StreamMark.Core.Tests/Streaming/SegmenterTests.cs:27`）。
 - **边界只前进**：`TryCommit` 有 `boundary <= FrozenEnd` 直接 return — see `src/StreamMark.Core/Streaming/StreamSegmenter.cs:262`；`AppendOnlyList` 的"旧分块永不移动"是这条不变量的底层保证 — see `src/StreamMark.Core/Streaming/AppendOnlyList.cs:3`。

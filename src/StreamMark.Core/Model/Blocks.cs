@@ -112,9 +112,18 @@ public sealed record ListBlock(bool IsOrdered, int StartNumber, char Bullet, boo
 /// <summary>列表项。<see cref="Task"/> 为 null 表示不是任务项。</summary>
 public sealed record ListItemBlock(bool? Task, ImmutableArray<MarkdownBlock> Children) : MarkdownBlock
 {
+    /// <summary>
+    /// 任务标记 <c>[ ]</c> / <c>[x]</c> 在整篇源码中的区间（共 3 个字符，偏移单位与 <see cref="MarkdownBlock.Range"/> 相同）；
+    /// 不是任务项时长度为 0。
+    /// </summary>
+    public SourceRange TaskMarker { get; init; }
+
     internal override void AddContent(ref Fingerprint fp)
     {
         fp.Add(Task is null ? -1 : Task.Value ? 1 : 0);
+        // 记相对列表项起点的位置：整体平移不改变指纹，标记在项内的位置变了（例如项目符号后多了空格）则视为内容变化
+        fp.Add(TaskMarker.Length == 0 ? -1 : TaskMarker.Start - Range.Start);
+        fp.Add(TaskMarker.Length);
         AddChildren(ref fp, Children);
     }
 }
