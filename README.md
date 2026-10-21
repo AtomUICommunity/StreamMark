@@ -38,10 +38,10 @@ Or in the project file:
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="TKCode.StreamMark.Avalonia" Version="0.1.0-alpha.23" />
-  <PackageReference Include="TKCode.StreamMark.Highlighting.TextMate" Version="0.1.0-alpha.23" />
-  <PackageReference Include="TKCode.StreamMark.RaTeX" Version="0.1.0-alpha.23" />
-  <PackageReference Include="TKCode.StreamMark.Mermaid" Version="0.1.0-alpha.23" />
+  <PackageReference Include="TKCode.StreamMark.Avalonia" Version="0.1.0-alpha.24" />
+  <PackageReference Include="TKCode.StreamMark.Highlighting.TextMate" Version="0.1.0-alpha.24" />
+  <PackageReference Include="TKCode.StreamMark.RaTeX" Version="0.1.0-alpha.24" />
+  <PackageReference Include="TKCode.StreamMark.Mermaid" Version="0.1.0-alpha.24" />
 </ItemGroup>
 ```
 
