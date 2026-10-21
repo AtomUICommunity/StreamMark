@@ -149,6 +149,11 @@ Raw HTML in Markdown (README style) is converted into the block model, so it sup
   - `TranscriptView.GetOutline()` and `MarkdownView.GetOutline()` return the headings as `OutlineItem(Target, Level, Text, Id)`. Pass `Target` to `ScrollToPoint`.
   - `TranscriptView.ScrollToPoint(TextPoint)` parses deferred entries if needed and places the target at about 30% from the top. `MarkdownView.ScrollToPoint` relies on the outer `ScrollViewer`.
   - In-document links (`#heading-id`, footnote references `#fn:…`) jump inside the document and are not passed to the host.
+- **Source positions and reading anchors** (`MarkdownView`, block-level precision):
+  - Offsets are UTF-16 code units, the same as `string` indexes and `SourceRange`: a CJK character counts as 1, a surrogate pair as 2, and `\r\n` as 2 (the text is not normalised). `SourceText.ToLocation` and `SourceText.ToOffset` convert to and from 0-based line and column with the same rules.
+  - `ScrollToSourceOffset(offset)` scrolls to the deepest block that contains the offset: a list item, a paragraph inside a quote, or a code block as a whole. It returns a `SourceNavigationResult`; when nothing moved, the status says why: `NoDocument` (no snapshot applied yet), `OutOfRange`, or `LayoutPending` (try again next frame).
+  - `GetSourceRange(TextPoint)` and `GetSelectionSourceRange()` map a rendered point or the selection back to the source range of the blocks it covers. `TextPoint.Offset` is an offset inside the segment's plain text, not a source offset, so text with emphasis or links never lines up with the source.
+  - `CaptureAnchor()` and `RestoreAnchor(anchor)` save and restore the reading position: the character at the top of the outer `ScrollViewer` plus its pixel displacement. A width, font or theme change keeps the place. An anchor is tied to `DocumentId`, which changes whenever `Markdown`, `Document` or `Stream` is assigned; an anchor from another document returns `WrongDocument`. If the anchored block is gone, the view scrolls to the next block (`Approximate`).
 - **Search**: `view.Search` is a `SearchModel`.
   - `Find(query, matchCase)` highlights every match, including content scrolled off-screen.
   - `Next()`, `Previous()` and `MoveTo(i)` jump to a match. `Clear()` removes the highlights.

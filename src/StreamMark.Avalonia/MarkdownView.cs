@@ -2,9 +2,11 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using StreamMark.Avalonia.Extensions;
 using StreamMark.Avalonia.Rendering;
 using StreamMark.Avalonia.Selection;
+using StreamMark.Core.Model;
 using StreamMark.Core.Streaming;
 
 namespace StreamMark.Avalonia;
@@ -100,8 +102,16 @@ public class MarkdownView : Control, ISelectionHost
 
     private StreamingDocument? EffectiveDocument => Stream?.Document ?? Document ?? _ownDocument;
 
+    /// <summary>
+    /// 视图里文档的标识：每次设置 <see cref="Markdown"/>、<see cref="Document"/> 或 <see cref="Stream"/> 都会递增
+    /// （这些赋值会清空选区与块状态，相当于换了一个文档）。源码位置与 <see cref="ReadingAnchor"/> 只在同一个标识内有意义。
+    /// 外部直接对已绑定的 <see cref="StreamingDocument"/> 调用 <c>Reset</c> 不会改变它，需要宿主重新赋值。
+    /// </summary>
+    public int DocumentId { get; private set; }
+
     private void OnSourceChanged()
     {
+        DocumentId++;
         if (Stream is null && Document is null)
         {
             _ownDocument ??= new StreamingDocument(MarkdownServices.GetServices(this).Profile);
@@ -237,6 +247,122 @@ public class MarkdownView : Control, ISelectionHost
 
     /// <summary>滚动到某个顶层块的开头。</summary>
     public bool ScrollToBlock(int blockKey) => ScrollToPoint(new TextPoint(0, blockKey, 0, 0));
+
+    /// <summary>
+    /// 滚动到源码偏移处（UTF-16 下标，行 / 列换算见 <see cref="SourceText"/>），块级精度：列表项、引用等容器里的段落也能命中，
+    /// 但不会细分到块内的行。偏移是相对当前已应用快照的源码而言的，<see cref="DocumentId"/> 或文本变了以后请重新换算。
+    /// 还没有应用快照（刚设置 <see cref="Markdown"/> 时）返回 <see cref="SourceNavigationStatus.NoDocument"/>，
+    /// 目标块没有排版完成时返回 <see cref="SourceNavigationStatus.LayoutPending"/>，两种情况都没有滚动，等下一帧再试。
+    /// </summary>
+    public SourceNavigationResult ScrollToSourceOffset(int offset)
+    {
+        if (_presenter.Applied is not { Count: > 0 } snapshot)
+        {
+            return new SourceNavigationResult(SourceNavigationStatus.NoDocument);
+        }
+        if (DocumentNavigation.ResolveSourceOffset(snapshot, 0, offset) is not { } target)
+        {
+            return new SourceNavigationResult(SourceNavigationStatus.OutOfRange);
+        }
+        if (!IsLayoutReady || !_presenter.Views.Any(v => v.TopKey == target.Point.BlockKey))
+        {
+            return new SourceNavigationResult(SourceNavigationStatus.LayoutPending, target);
+        }
+        ScrollToPoint(target.Point);
+        return new SourceNavigationResult(SourceNavigationStatus.Navigated, target);
+    }
+
+    /// <summary>渲染位置 → 源码区间，块级精度：返回承载该文本片段的最深的块的完整区间。快照没有对应的块时返回 null。</summary>
+    public SourceRange? GetSourceRange(TextPoint point) =>
+        _presenter.Applied is { } snapshot ? DocumentNavigation.SourceRangeOf(snapshot, point) : null;
+
+    /// <summary>当前选区覆盖的源码区间（两端各扩展到完整的块）；没有选区时返回 null。</summary>
+    public SourceRange? GetSelectionSourceRange()
+    {
+        if (Selection.Range is not { } range || _presenter.Applied is not { } snapshot
+            || DocumentNavigation.SourceRangeOf(snapshot, range.Start) is not { } first
+            || DocumentNavigation.SourceRangeOf(snapshot, range.End) is not { } last)
+        {
+            return null;
+        }
+        return new SourceRange(first.Start, Math.Max(first.End, last.End) - first.Start);
+    }
+
+    /// <summary>
+    /// 记录当前阅读位置：外层 <see cref="ScrollViewer"/> 可视区域顶部的那个字符，以及它相对顶边的像素位移。
+    /// 没有外层滚动容器或还没有内容时返回 null。
+    /// </summary>
+    public ReadingAnchor? CaptureAnchor()
+    {
+        if (_presenter.Applied is null || this.FindAncestorOfType<ScrollViewer>() is not { } scroll || scroll.TranslatePoint(default, this) is not { } viewport)
+        {
+            return null;
+        }
+        var top = viewport.Y;
+        foreach (var view in _presenter.Views)
+        {
+            if (view.Bounds.Bottom <= top)
+            {
+                continue;
+            }
+            foreach (var segment in view.Segments())
+            {
+                if (segment.View.TranslatePoint(default, this) is not { } origin || origin.Y + segment.View.Bounds.Height <= top)
+                {
+                    continue;
+                }
+                var offset = segment.HitTest(new Point(0, Math.Max(0, top - origin.Y)));
+                var rect = segment.GetCharacterBounds(offset);
+                return new ReadingAnchor(DocumentId, view.TopKey, segment.Key.Segment, offset, top - (origin.Y + rect.Top));
+            }
+            return new ReadingAnchor(DocumentId, view.TopKey, -1, 0, top - view.Bounds.Top);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// 把 <see cref="CaptureAnchor"/> 记录的位置滚回可视区域顶部。锚点来自另一个文档时不恢复；
+    /// 锚点所在的块已不存在时滚动到它之后最近的块（<see cref="AnchorRestoreStatus.Approximate"/>）。
+    /// 版面还没有稳定（刚改过宽度、字体或内容，需要等一次布局）时返回 <see cref="AnchorRestoreStatus.LayoutPending"/>。
+    /// </summary>
+    public AnchorRestoreStatus RestoreAnchor(ReadingAnchor anchor)
+    {
+        if (anchor.DocumentId != DocumentId)
+        {
+            return AnchorRestoreStatus.WrongDocument;
+        }
+        var views = _presenter.Views;
+        if (_presenter.Applied is not { Count: > 0 } || views.Count == 0)
+        {
+            return AnchorRestoreStatus.NoDocument;
+        }
+        if (this.FindAncestorOfType<ScrollViewer>() is not { } scroll)
+        {
+            return AnchorRestoreStatus.NoViewport;
+        }
+        if (!IsLayoutReady || scroll.TranslatePoint(default, this) is not { } viewport)
+        {
+            return AnchorRestoreStatus.LayoutPending;
+        }
+        var exact = views.FirstOrDefault(v => v.TopKey == anchor.BlockKey);
+        var view = exact ?? views.FirstOrDefault(v => v.TopKey >= anchor.BlockKey) ?? views[^1];
+        var key = new SegmentKey(0, anchor.BlockKey, anchor.Segment);
+        double target;
+        if (exact is not null && anchor.Segment >= 0 && view.Segments().FirstOrDefault(s => s.Key == key) is { } segment
+            && segment.View.TranslatePoint(default, this) is { } origin)
+        {
+            target = origin.Y + segment.GetCharacterBounds(anchor.Offset).Top + anchor.Displacement;
+        }
+        else
+        {
+            target = view.Bounds.Top + (exact is null ? 0 : anchor.Displacement);
+        }
+        var maxOffset = Math.Max(0, scroll.Extent.Height - scroll.Viewport.Height);
+        scroll.Offset = new Vector(scroll.Offset.X, Math.Clamp(scroll.Offset.Y + target - viewport.Y, 0, maxOffset));
+        return exact is null ? AnchorRestoreStatus.Approximate : AnchorRestoreStatus.Restored;
+    }
+
+    private bool IsLayoutReady => IsMeasureValid && IsArrangeValid && Bounds.Height > 0;
 
     // 文内锚点（#标题、#fn:脚注）在文档内跳转，找不到时交给宿主
     private void OnAnchorLinkClicked(object? sender, LinkClickedEventArgs e)

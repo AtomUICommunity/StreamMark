@@ -19,6 +19,7 @@ updated: 2026-10-16
 | `BackslashMathExtension` | `src/StreamMark.Core/Parsing/BackslashMathExtension.cs:BackslashMathExtension` | 公开扩展：`\(…\)` / `\[…\]` 数学定界符 |
 | `MarkdigMapper.MapDocument` | `src/StreamMark.Core/Parsing/MarkdigMapper.cs:MapDocument` | `internal`，整篇 Markdig 文档 → 块模型；`DocumentComposer.Parse` 是唯一生产调用方（`DocumentComposer.cs:115`） |
 | `OffsetMap.Create` / `ToSource` | `src/StreamMark.Core/Parsing/OffsetMap.cs:Create` | `internal`，修补后位置 → 原始源码位置，块区间与 key 都经它落回原文 |
+| `SourceText.ToLocation` / `ToOffset` | `src/StreamMark.Core/Model/SourceText.cs:SourceText` | public，源码偏移 ↔ 行 / 列（0 起始）的约定：偏移 = UTF-16 下标，`\r\n` 占 2 个单位且不归一化，换行符为 `\n` / `\r\n` / 单独 `\r`；与 `SourceRange` 同一套单位 |
 | `HtmlElements` | `src/StreamMark.Core/Html/HtmlTree.cs:HtmlElements` | 支持元素集合（Block / Inline / Void / Containers），是"未知元素按源码显示"的判定依据 |
 | `HtmlTreeBuilder` / `HtmlMapper` | `src/StreamMark.Core/Html/HtmlTree.cs:HtmlTreeBuilder`、`src/StreamMark.Core/Html/HtmlMapper.cs:HtmlMapper` | public，但当前只有 `MarkdigMapper` 调用（`MarkdigMapper.cs:86`、`:125`）；测试直接驱动构建器（`tests/StreamMark.Core.Tests/Html/HtmlTests.cs:190`） |
 | `CssStyle` | `src/StreamMark.Core/Html/CssStyle.cs:CssStyle` | public，`FromAttributes` / `Apply` / `TryParseLength` / `TryParseColor` / `ImageSize`；渲染层也读它的钳制常量（`TextSegmentView.cs:929`） |

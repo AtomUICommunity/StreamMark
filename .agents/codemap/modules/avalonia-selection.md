@@ -18,6 +18,9 @@ updated: 2026-10-16
 | `ISelectionHost` | src/StreamMark.Avalonia/Selection/SelectionController.cs:13 | 宿主契约：`RealizedSegments` / `EntryCount` / `GetSnapshot` / `GetSource` / `OnSelectionDrag` / `Plugins` |
 | `ISelectableSegment` | src/StreamMark.Avalonia/Selection/ISelectableSegment.cs:7 | 片段视图契约：`Key` / `Text` / `View` / `HitTest` / `GetCharacterBounds` |
 | `BlockText` | src/StreamMark.Avalonia/Selection/BlockText.cs:11 | 唯一"块模型 → 片段列表/纯文本"的提取器，复制与视图编号共用 |
+| `DocumentNavigation.ResolveSourceOffset` / `.SourceRangeOf` | src/StreamMark.Avalonia/Selection/DocumentNavigation.cs:71、:107 | 源码偏移 ↔ 渲染位置的块级换算（纯函数，输入是快照）。偏移 → `SourceTarget`（含 `TextPoint` 与块区间）；`TextPoint` → 承载该片段的最深块的源码区间 |
+| `MarkdownView.ScrollToSourceOffset` / `.GetSourceRange` / `.GetSelectionSourceRange` | src/StreamMark.Avalonia/MarkdownView.cs:257、:276、:280 | 宿主入口：按源码偏移滚动（返回 `SourceNavigationResult`，状态说明为什么没动）、渲染点 / 选区反查源码区间 |
+| `MarkdownView.CaptureAnchor` / `.RestoreAnchor` / `.DocumentId` | src/StreamMark.Avalonia/MarkdownView.cs:295、:328、:110 | 阅读锚点：外层 `ScrollViewer` 可视区顶部的字符 + 像素位移；绑定视图级 `DocumentId`，跨文档不恢复 |
 
 ## Key types and functions
 | Symbol | File | Role |
@@ -70,6 +73,9 @@ updated: 2026-10-16
 - To change 拖拽时自动滚动的速度/边界：改 `TranscriptPanel.OnSelectionDrag`（`Transcript/TranscriptPanel.cs:924`），本模块只负责调用（`Selection/SelectionController.cs:106`）。
 
 ## Invariants and traps
+- **`TextPoint.Offset` 不是源码偏移**：它是片段纯文本里的下标（粗体、链接的标记不在里面）。源码位置只有 `BlockKey`（块起点）与块的 `Range` 是真的，所以反查只给块级区间（`SourceRangeOf`），不要把片段偏移加到 `BlockKey` 上冒充源码偏移 — see `Selection/DocumentNavigation.cs:107`。
+- **阅读锚点的身份是 `MarkdownView.DocumentId`，不是快照的 `Generation`**：`Generation` 在 `Complete()` 时也会递增（`DocumentComposer.Finish`），同一份流式源码完成前后 `Generation` 不同。`DocumentId` 只在 `Markdown` / `Document` / `Stream` 被赋值时递增；外部对已绑定的 `StreamingDocument` 直接 `Reset` 它察觉不到，此时锚点按块 `Key` 找不到会退到最近的块（`Approximate`）— see `MarkdownView.cs:110`、`:328`。
+- 源码导航与锚点恢复在版面未稳定（`IsMeasureValid` / `IsArrangeValid` 为假）时直接返回 `LayoutPending` 而不滚动，不要改成"尽力而为"——位置会按旧版面算错 — see `MarkdownView.cs`（`IsLayoutReady`）。
 - 选区坐标绝不持有视图引用 — 否则虚拟化回收后选区指向已丢弃的控件 — see `Selection/SelectionModel.cs:9`、`Selection/SelectionController.cs:189`。
 - `GetSelectedText` 的片段区间按**片段下标**从 `BlockText` 重算，不依赖任何视图是否实例化；而视图侧编号只在 `Update` 时分配，因此"顺序一致"是唯一粘合剂 — see `Selection/SelectionController.cs:204`、`Rendering/BlockView.cs:43`。
 - 指针判定顺序：`ClickCount == 2` 选词、`>= 3` 选整段、默认分支才看 Shift 扩展，否则 anchor=active 定位（`Selection/SelectionController.cs:72-91`）。注意 `case 2` 里的 `WordAt` 调用在 `switch` 分支内声明，`default` 分支不会执行它；拖拽只在 `ClickCount == 1` 时成立（`:92`），双击/三击不会进入拖拽状态。
