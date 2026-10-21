@@ -60,6 +60,21 @@ public sealed class StreamingDocument
         }
     }
 
+    /// <summary>
+    /// 最新提交的源码版本（每次追加、<see cref="Complete"/>、<see cref="Reset"/>、<see cref="Load"/> 都会递增，跨重置也不回退）。
+    /// 后台解析是异步的：<see cref="DocumentSnapshot.Version"/> 追上这个值，才说明最新提交的文本已经解析完。
+    /// </summary>
+    public long Version
+    {
+        get
+        {
+            lock (_sourceLock)
+            {
+                return _version;
+            }
+        }
+    }
+
     public void Append(string text) => Append(text.AsSpan());
 
     public void Append(ReadOnlySpan<char> text)
@@ -112,11 +127,21 @@ public sealed class StreamingDocument
         Schedule();
     }
 
-    /// <summary>一次性加载完整文本（非流式消息）。</summary>
+    /// <summary>
+    /// 一次性加载完整文本（非流式消息）。清空、写入和标记完成在同一次加锁里完成，工作线程不会取到
+    /// "已清空但还没完成"的中间状态，所以不会为这段文本产生一个未完成的快照。
+    /// </summary>
     public void Load(string markdown)
     {
-        Reset(markdown);
-        Complete();
+        lock (_sourceLock)
+        {
+            _source.Clear();
+            _source.Append(markdown);
+            _completeRequested = true;
+            _sourceGeneration++;
+            _version++;
+        }
+        Schedule();
     }
 
     /// <summary>

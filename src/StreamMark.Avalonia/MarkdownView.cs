@@ -39,6 +39,10 @@ public class MarkdownView : Control, ISelectionHost
     private RenderContext? _context;
     private bool _frameRequested;
     private readonly Plugins.BlockStateStore _state = new();
+    private bool _refreshing;
+    private long _refreshVersion;
+    private ReadingAnchor? _pendingAnchor;
+    private int _anchorAttempts;
 
     static MarkdownView()
     {
@@ -130,8 +134,49 @@ public class MarkdownView : Control, ISelectionHost
     /// </summary>
     public int DocumentId { get; private set; }
 
+    /// <summary>
+    /// 编辑器预览用的全文刷新：把文本换成 <paramref name="markdown"/>，但和直接设置 <see cref="Markdown"/> 不同，不会清空视图。
+    /// 新文本在后台解析完成之前继续显示旧内容；解析完成后，没变的块与整体平移的块（前面增删了文字）原地更新，
+    /// 视图、排版和块状态都保留，选区与阅读位置按新的源码位置搬过去。
+    /// <see cref="DocumentId"/> 不变，所以此前捕获的 <see cref="ReadingAnchor"/> 仍然有效（同一个文档的新版本）。
+    /// 连续刷新时，被后来的文本取代的中间版本不会显示。
+    /// </summary>
+    /// <remarks>
+    /// 选区端点的去向：在整体平移的块里精确平移；在内容被改写的块里留在配对的新块上，片段序号与偏移钳到新文本范围内；
+    /// 在被删除的块里退到后面第一个存活块的开头（没有则文档末尾），两端落到同一点时选区清空。
+    /// 直接给 <see cref="Markdown"/> 赋值仍然表示换了一个新文档：清空选区与块状态，<see cref="DocumentId"/> 递增。
+    /// 只在文本来自 <see cref="Markdown"/> 时可用；<see cref="Document"/> / <see cref="Stream"/> 的内容归宿主自己管理。
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">视图绑定了 <see cref="Document"/> 或 <see cref="Stream"/>。</exception>
+    public void RefreshMarkdown(string? markdown)
+    {
+        if (Stream is not null || Document is not null)
+        {
+            throw new InvalidOperationException("RefreshMarkdown only applies when the text comes from the Markdown property, not from Document or Stream.");
+        }
+        _refreshing = true;
+        try
+        {
+            Markdown = markdown;
+        }
+        finally
+        {
+            _refreshing = false;
+        }
+    }
+
     private void OnSourceChanged()
     {
+        if (_refreshing && _ownDocument is not null && _presenter.Applied is not null && Stream is null && Document is null)
+        {
+            // 全文刷新：旧画面、选区和块状态都留着，等新文本解析完再按对齐结果应用（见 ApplyLatest）
+            _ownDocument.Load(Markdown ?? "");
+            _refreshVersion = _ownDocument.Version;
+            RequestFrame();
+            return;
+        }
+        _refreshVersion = 0;
+        _pendingAnchor = null;
         DocumentId++;
         if (Stream is null && Document is null)
         {
@@ -197,7 +242,88 @@ public class MarkdownView : Control, ISelectionHost
         }
         _context ??= CreateContext();
         Stream?.SetFrameSource(TopLevel.GetTopLevel(this));
-        _presenter.Apply(document.Latest, _context);
+        var snapshot = document.Latest;
+        if (_refreshVersion != 0)
+        {
+            // 刷新的新文本还没解析完（或只解析到了已被取代的中间版本）：继续显示旧内容
+            if (snapshot.Version < _refreshVersion)
+            {
+                return;
+            }
+            _refreshVersion = 0;
+            ApplyEdited(snapshot, _context);
+            return;
+        }
+        _presenter.Apply(snapshot, _context);
+    }
+
+    // 顺序要紧：视图更新时按新 key 读取块状态，所以先搬状态与选区，再应用差异，最后在版面稳定后恢复阅读位置
+    private void ApplyEdited(DocumentSnapshot snapshot, RenderContext context)
+    {
+        var anchor = CaptureAnchor();
+        var edit = SnapshotEdit.Compute(_presenter.Applied, snapshot);
+        _state.Remap(edit.MapKey);
+        RemapSelection(edit);
+        _presenter.ApplyEdit(edit, context);
+        if (anchor is not null && RemapAnchor(edit, anchor) is { } moved)
+        {
+            if (_pendingAnchor is null)
+            {
+                LayoutUpdated += OnLayoutUpdatedForAnchor;
+            }
+            _pendingAnchor = moved;
+            _anchorAttempts = 0;
+        }
+    }
+
+    private void RemapSelection(SnapshotEdit edit)
+    {
+        if (Selection.Anchor is not { } anchor || Selection.Active is not { } active)
+        {
+            return;
+        }
+        var mappedAnchor = SelectionRemap.Map(edit, anchor);
+        var mappedActive = SelectionRemap.Map(edit, active);
+        if (anchor == active)
+        {
+            Selection.Set(mappedAnchor, mappedAnchor);
+        }
+        else if (mappedAnchor == mappedActive)
+        {
+            Selection.Clear();
+        }
+        else
+        {
+            Selection.Set(mappedAnchor, mappedActive);
+        }
+    }
+
+    private static ReadingAnchor? RemapAnchor(SnapshotEdit edit, ReadingAnchor anchor)
+    {
+        if (edit.FindMove(anchor.BlockKey) is not { } move)
+        {
+            return anchor;
+        }
+        if (move.Fate != BlockFate.Deleted)
+        {
+            return anchor with { BlockKey = move.New!.Key };
+        }
+        var fallback = move.New ?? (edit.Next.Count > 0 ? edit.Next[^1] : null);
+        return fallback is null ? null : anchor with { BlockKey = fallback.Key, Segment = 0, Offset = 0 };
+    }
+
+    // 应用差异之后版面还没有重新计算：等布局完成再恢复阅读位置（偶尔还会被打断，最多重试几次）
+    private void OnLayoutUpdatedForAnchor(object? sender, EventArgs e)
+    {
+        if (_pendingAnchor is { } anchor)
+        {
+            if (RestoreAnchor(anchor) == AnchorRestoreStatus.LayoutPending && ++_anchorAttempts < 5)
+            {
+                return;
+            }
+            _pendingAnchor = null;
+        }
+        LayoutUpdated -= OnLayoutUpdatedForAnchor;
     }
 
     private RenderContext CreateContext() =>

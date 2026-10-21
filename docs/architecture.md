@@ -46,6 +46,8 @@ StreamMark 是面向 AI 对话场景的高性能流式 Markdown 渲染库：Aval
 3. **冻结片段独立解析的结果与整篇解析一致**（引用定义除外，见 streaming-rules.md）。测试 `StreamingEquivalenceTests` 在每一步都验证这一点。
 4. **偏移永远指原始源码**：remend 会插入转义字符，`OffsetMap` 把修补后文本中的位置映射回原始位置。
 5. **界面线程不做解析**：解析在后台单线程合并执行，界面层每帧最多应用一次差异。
+6. **宿主整篇替换文本（编辑器预览）不改变只追加的约定**：`MarkdownView.RefreshMarkdown` 仍是 `Load`（新一代），但视图不清空：用 `SnapshotEdit` 把新旧两份快照按内容对齐，前面增删文字让后面的块整体平移时，视图原地更新到新的源码位置，块状态、选区与阅读位置按对齐结果搬过去。`SnapshotDiff` 只按源码起点归并，对这种情况会把后面所有块当成删除再插入，所以刷新另走 `SnapshotEdit`。
+7. **阅读锚点与源码位置的身份是视图级的 `DocumentId`**，不是快照的 `Generation`（`Complete()` 时也会递增）。块级精度：`TextPoint.Offset` 是片段纯文本偏移，不是源码偏移，源码位置只到块的 `Range`。
 
 ## 线程模型
 
@@ -67,7 +69,7 @@ StreamMark 是面向 AI 对话场景的高性能流式 Markdown 渲染库：Aval
 | `TextSegmentView` | 一个文本片段 = 一个 `SegmentLayout`（逐行的 `TextLine`，与 `TextLayout` 结果一致）。自定义 `ITextSource` 提供行内样式；公式、图片、任务复选框是 `DrawableTextRun`（基线对齐）。流式追加只从差异点所在行的前一行重新排版，每行一个 `SegmentLineVisual` 单独录制，所以只有变化的行重新录制、产生脏区。片段自身只画可命中区域、选区 / 查找高亮与流式光标；删除线随行自绘 |
 | `TailFade` | 文档末尾片段的逐字渐显，在渲染线程完成：界面线程在排版变化时把渐显中的字形与各批出现时间交给合成层的自定义视觉（`CompositionCustomVisualHandler`），所在行视觉用矩形裁掉渐显部分；之后每帧只由渲染线程重绘这一小块，界面线程不参与。渐显结束后恢复行的完整绘制 |
 | 块视图 | `TextBlockView`（段落 / 标题 / HTML）、`CodeBlockView`（逐行排版缓存 + 后台增量高亮 + 复制 / 换行）、`TableBlockView`（自定义列宽布局，不用 `Grid`）、`MathBlockView`（保留上一次成功排版）、`DiagramBlockView`（闭合后后台渲染、缓存、图表 / 源码切换）、列表 / 引用 / 提示块 / 容器 / 脚注 / 定义列表 |
-| `DocumentPresenter` | 把快照差异应用到顶层块视图：同类型复用，类型变化才替换 |
+| `DocumentPresenter` | 把快照差异应用到顶层块视图：同类型复用，类型变化才替换；`ApplyEdit` 应用 `SnapshotEdit`（宿主整篇替换文本） |
 | `MarkdownView` | 单文档、非虚拟化、高度随内容；`Markdown` / `Document` / `Stream` 三种输入 |
 | `TranscriptPanel` / `TranscriptView` | 会话：所有消息摊平成行（Markdown 顶层块各一行，宿主内容各一行），只实例化视口 ±600px 内的行；按块类型估算未测量行高；滚动锚定；贴底跟随；`MaxContentWidth` 居中列 |
 | `SelectionModel` / `SelectionController` | 选区坐标 `(消息, 顶层块 key, 片段, 偏移)`，与视图无关；单击 / 拖拽（自动滚动）/ 双击选词 / 三击选段 / Shift 扩展；⌘C 纯文本、⌘⇧C Markdown 源码、⌘A 全选；被虚拟化移出的块也能复制 |

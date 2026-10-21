@@ -74,6 +74,7 @@ updated: 2026-10-16
 
 ## Invariants and traps
 - **`TextPoint.Offset` 不是源码偏移**：它是片段纯文本里的下标（粗体、链接的标记不在里面）。源码位置只有 `BlockKey`（块起点）与块的 `Range` 是真的，所以反查只给块级区间（`SourceRangeOf`），不要把片段偏移加到 `BlockKey` 上冒充源码偏移 — see `Selection/DocumentNavigation.cs:107`。
+- **文档被整篇替换后选区的去向（`SelectionRemap`）**：平移的块精确平移；被替换的块映射到配对的新块并把片段序号 / 偏移钳到新文本范围内；被删除的块退到后面第一个存活块的开头（没有则文档末尾）；两端落到同一点则清空（原本就是插入点的保留）。选区坐标只存值，所以搬迁只是重写 `BlockKey` — see `Selection/SelectionRemap.cs`、`MarkdownView.RemapSelection`。
 - **阅读锚点的身份是 `MarkdownView.DocumentId`，不是快照的 `Generation`**：`Generation` 在 `Complete()` 时也会递增（`DocumentComposer.Finish`），同一份流式源码完成前后 `Generation` 不同。`DocumentId` 只在 `Markdown` / `Document` / `Stream` 被赋值时递增；外部对已绑定的 `StreamingDocument` 直接 `Reset` 它察觉不到，此时锚点按块 `Key` 找不到会退到最近的块（`Approximate`）— see `MarkdownView.cs:110`、`:328`。
 - 源码导航与锚点恢复在版面未稳定（`IsMeasureValid` / `IsArrangeValid` 为假）时直接返回 `LayoutPending` 而不滚动，不要改成"尽力而为"——位置会按旧版面算错 — see `MarkdownView.cs`（`IsLayoutReady`）。
 - 选区坐标绝不持有视图引用 — 否则虚拟化回收后选区指向已丢弃的控件 — see `Selection/SelectionModel.cs:9`、`Selection/SelectionController.cs:189`。

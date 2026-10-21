@@ -27,11 +27,19 @@ internal sealed class DocumentPresenter
     public RenderContext? Context { get; private set; }
 
     /// <summary>应用新快照；返回是否有任何变化。</summary>
-    public bool Apply(DocumentSnapshot snapshot, RenderContext context)
+    public bool Apply(DocumentSnapshot snapshot, RenderContext context) =>
+        Apply(SnapshotDiff.Compute(Applied, snapshot), snapshot, context);
+
+    /// <summary>
+    /// 应用编辑前后两份快照的对齐结果（宿主整篇替换文本）：被平移的块原地更新到新的源码位置，而不是删掉重建，
+    /// 所以视图、排版缓存与界面状态都保留。<paramref name="edit"/> 必须是以当前已应用的快照为起点算出的。
+    /// </summary>
+    public bool ApplyEdit(SnapshotEdit edit, RenderContext context) => Apply(edit.Ops, edit.Next, context);
+
+    private bool Apply(IReadOnlyList<DiffOp> ops, DocumentSnapshot snapshot, RenderContext context)
     {
         var contextChanged = !ReferenceEquals(Context, context);
         Context = context;
-        var ops = SnapshotDiff.Compute(Applied, snapshot);
         foreach (var op in ops)
         {
             switch (op.Kind)
