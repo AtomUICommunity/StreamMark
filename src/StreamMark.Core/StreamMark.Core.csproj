@@ -1,5 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
+        <!-- 目标框架由 Directory.Build.props 统一为 net10.0；这三个库额外支持 net8.0（TKCode.Arc 的 .NET 8 宿主） -->
+        <TargetFramework />
+        <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
         <Description>StreamMark core: streaming Markdown source buffer, incomplete-markdown repair, segmenter, block model and pacing. No UI dependency.</Description>
     </PropertyGroup>
     <ItemGroup>

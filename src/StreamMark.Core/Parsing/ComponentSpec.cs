@@ -62,8 +62,12 @@ internal sealed class ComponentTable
 
     public bool TryGet(ReadOnlySpan<char> name, out ComponentSpec spec)
     {
+#if NET9_0_OR_GREATER
         var lookup = _specs.GetAlternateLookup<ReadOnlySpan<char>>();
         return lookup.TryGetValue(name, out spec!);
+#else
+        return _specs.TryGetValue(name.ToString(), out spec!);
+#endif
     }
 }
 

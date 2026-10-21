@@ -119,20 +119,23 @@ internal sealed class DocumentComposer
     {
         var body = contentStart - from < text.Length ? text.AsSpan(contentStart - from) : [];
         // 与 remend 一致：去掉末尾单个空格（流式中常见的分词残留），保证与解析路径结果相同
-        if (body.EndsWith(" ") && !body.EndsWith("  "))
+        if (body.EndsWith(" ".AsSpan()) && !body.EndsWith("  ".AsSpan()))
         {
             body = body[..^1];
         }
-        if (body.EndsWith("\n"))
+        if (body.EndsWith("\n".AsSpan()))
         {
             body = body[..^1];
         }
         var code = new StringBuilder(body.Length);
         var first = true;
-        foreach (var range in body.Split('\n'))
+        // 按行切分；net8 没有 span.Split，用 IndexOf 逐行推进
+        var rest = body;
+        while (true)
         {
-            var line = body[range];
-            if (line.EndsWith("\r"))
+            var newline = rest.IndexOf('\n');
+            var line = newline < 0 ? rest : rest[..newline];
+            if (line.EndsWith("\r".AsSpan()))
             {
                 line = line[..^1];
             }
@@ -148,6 +151,11 @@ internal sealed class DocumentComposer
             }
             code.Append(line[strip..]);
             first = false;
+            if (newline < 0)
+            {
+                break;
+            }
+            rest = rest[(newline + 1)..];
         }
         if (body.IsEmpty)
         {

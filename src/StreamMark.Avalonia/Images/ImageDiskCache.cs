@@ -102,7 +102,7 @@ public sealed class ImageDiskCache
     public long MaxBytes { get; }
 
     /// <summary>地址对应的文件名主干：SHA256(UTF-8 地址) 的小写十六进制。</summary>
-    public static string HashKey(string url) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(url)));
+    public static string HashKey(string url) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(url))).ToLowerInvariant();
 
     /// <summary>元数据是否仍新鲜（无需重新验证）。</summary>
     public bool IsFresh(ImageDiskCacheEntry entry) => _time.GetUtcNow().UtcDateTime < entry.ExpiresUtc;
