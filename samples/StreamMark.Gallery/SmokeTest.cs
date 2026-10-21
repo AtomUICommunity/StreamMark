@@ -61,6 +61,17 @@ internal static class SmokeTest
         Check("stream.blocks", final.Count == 5 && final[1] is ParagraphBlock { Content.Objects.Length: 1 } && final[2] is CodeBlock { Language: "csharp" } && final[3] is TableBlock, kinds);
         Check("stream.diff", SnapshotDiff.Compute(null, final).Count == final.Count);
 
+        // 编辑器预览：整篇替换后的块对齐、任务标记的源码区间、源码偏移与行列换算
+        var edited = new StreamingDocument();
+        edited.Load("Intro.\n\n" + markdown);
+        edited.WhenIdle().GetAwaiter().GetResult();
+        var edit = SnapshotEdit.Compute(final, edited.Latest);
+        Check("edit.align", edit.Moves.Count == final.Count && edit.Moves.All(m => m.Fate == BlockFate.Shifted) && edit.Ops.Count(o => o.Kind == DiffKind.Insert) == 1,
+            string.Join(",", edit.Moves.Select(m => m.Fate)));
+        var task = final[^1] is ListBlock { Items: [{ Task: true } first, ..] } ? first : null;
+        Check("task.marker", task is not null && markdown.Substring(task.TaskMarker.Start, task.TaskMarker.Length) == "[x]");
+        Check("source.location", SourceText.ToLocation(markdown, markdown.IndexOf("bold", StringComparison.Ordinal)) == new SourceLocation(2, 7));
+
         // 界面：在无头平台上用 Skia 真实渲染会话视图（公式、高亮、图表、表格），并截图
         try
         {

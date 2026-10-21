@@ -49,11 +49,18 @@ public sealed class RenderContext
     /// <summary>外层 HTML 盒子的背景色（用于判断作者颜色是否可读），没有时为 null。</summary>
     public CssColor? HtmlBackground { get; private init; }
 
+    /// <summary>
+    /// 任务复选框的点击 / 键盘请求，由宿主视图在启用任务交互时设置；为 null 时复选框只读。
+    /// 参数是被点的列表项，返回是否已把请求交给宿主。
+    /// </summary>
+    internal Func<ListItemBlock, bool>? TaskToggle { get; init; }
+
     public RenderContext With(MarkdownStyle? style = null, MarkdownServices? services = null, int? entry = null) =>
         new(style ?? Style, services ?? Services, Selection, entry ?? Entry, Streaming, State, ImageBaseUri)
         {
             Inherited = Inherited,
             HtmlBackground = HtmlBackground,
+            TaskToggle = TaskToggle,
         };
 
     /// <summary>进入一个 HTML 盒子：叠加其文字样式与背景。</summary>
@@ -62,5 +69,6 @@ public sealed class RenderContext
         {
             Inherited = text.Over(Inherited ?? HtmlTextStyle.Default),
             HtmlBackground = background is { A: > 0 } ? background : HtmlBackground,
+            TaskToggle = TaskToggle,
         };
 }

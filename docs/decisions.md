@@ -77,3 +77,12 @@
   - **无障碍**：Avalonia 12 没有公开的 `TextPattern`，读屏只能读到名称；标题通过 `AutomationProperties.HeadingLevel` 提供级别。
   - **键盘选区**：Shift+↑/↓ 用字符框上下方的探测点按坐标命中，探测距离逐步加大，以跨过块之间的间距。
   - **修正**：Markdig 中脚注组的区间从文档开头算起，曾使 `FootnotesBlock` 的 key 为 0，与第一个块重复；现在取其中脚注的区间。
+- **编辑器预览的集成（2026-10-21，issue #5 / #6 / #7）**：
+  - **整篇替换用 `RefreshMarkdown`，不让 `StreamingDocument` 可变**。被否决：让文档支持任意位置编辑（会破坏"源码只追加、冻结前缀永不重解析"，流式与整篇解析的等价性无从保证）；`Markdown` 赋值自动保留状态（会让宿主把旧文档的选区和状态带进一个真正的新文档，赋值仍然表示换文档）。
+  - **对齐在 Core（`SnapshotEdit`），不新增 `DiffKind`**：平移的块用 `Update` 表示，`SnapshotDiff` / `DocumentPresenter.Apply` / `TranscriptPanel` 三处 `switch` 不用动。前缀 / 后缀剥离后，中间部分按内容做最长公共子序列（块数乘积超过 100 万则退回按位置替换）。按位置硬配对在一次刷新里有两处编辑时会把状态和选区配到不相干的块上，所以不取。
+  - **不接受宿主传入的改动范围**：前缀 / 后缀 + 内容配对对编辑已经足够，宿主给的范围不会让结果更准，却多一个会写错的参数。
+  - **`Load` 原子化**：原来是 `Reset` 再 `Complete`，工作线程可能在两者之间取到"已清空但未完成"的文本，产生一个只含尾部补全的中间快照；对刷新而言那会是一帧错误画面。
+  - **过期结果靠版本丢弃**：视图记下刷新时的 `StreamingDocument.Version`，`Latest.Version` 没追上就不应用，A → B → C 之间的快照不会上屏。
+  - **阅读锚点身份用视图级 `DocumentId`**：`DocumentSnapshot.Generation` 在 `Complete()` 时也递增，同一份流式源码完成前后不同。已知限制：外部直接对绑定的 `StreamingDocument.Reset` 视图察觉不到。
+  - **源码位置只做块级**：`TextPoint.Offset` 是片段纯文本偏移，粗体 / 链接的标记不在里面，不能当源码偏移。精确到字符需要给行内内容记源码区间，成本与收益不成比例，先不做。
+  - **任务勾选只发请求**：StreamMark 不写文件、不改快照，宿主改自己的原文并管撤销；只在快照完整时发；`ListItemBlock.TaskMarker` 进指纹时记相对列表项起点的位置，整体平移不产生 Update。

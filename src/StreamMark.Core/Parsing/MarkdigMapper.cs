@@ -254,13 +254,19 @@ internal static class MarkdigMapper
             }
             var children = MapChildren(item, ctx);
             bool? task = null;
+            var marker = default(SourceRange);
             // 任务复选框是首个段落的第一个行内元素：提升为列表项属性，并从段落文本中去掉
             if (children.Length > 0 && children[0] is Model.ParagraphBlock first && first.Content.Objects is [{ Kind: InlineObjectKind.TaskCheckbox, Offset: 0 } checkbox, ..])
             {
                 task = checkbox.Flag;
                 children = children.SetItem(0, first with { Content = StripLeadingObject(first.Content) });
+                if (item.Count > 0 && item[0] is MdParagraphBlock { Inline.FirstChild: TaskList { Span.IsEmpty: false } taskInline })
+                {
+                    var markerStart = ctx.Map.ToSource(taskInline.Span.Start);
+                    marker = new SourceRange(markerStart, ctx.Map.ToSource(taskInline.Span.End + 1) - markerStart);
+                }
             }
-            items.Add(new Model.ListItemBlock(task, children) { Range = RangeOf(item, ctx) });
+            items.Add(new Model.ListItemBlock(task, children) { Range = RangeOf(item, ctx), TaskMarker = marker });
         }
         var start = 1;
         if (list.IsOrdered && list.OrderedStart is { } orderedStart && int.TryParse(orderedStart, out var parsed))

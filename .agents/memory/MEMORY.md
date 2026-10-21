@@ -20,6 +20,7 @@
 - [回退字体曾依赖取 run 的起点与匹配历史](fallback-font-position-history.md) — Windows 上流式断行与整段排版不一致的原因（alpha.19 修复）
 - [差异视图正在加入（2026-10-16）](diff-view-in-flight.md) — 当前在飞的特性，以及它会收紧哪些不变量
 - [Mermaid 配色默认复刻 mermaid.js，宿主半透明色必须叠底色](mermaid-theme-mermaidjs.md) — 白底白字的来历、`DataPalette` 的蓝色陷阱、高图不再封顶 900px
+- [LongCodeTests 的 20ms 计时断言本机偶发失败](longcode-jump-timing-flaky.md) — 全量里只有它失败时先单独重跑，别当成回归
 - [表格操作按钮在网格外的操作条里](table-actions-outside-grid.md) — 复制按钮曾盖在表头上，负坐标 / Popup 点不中
 
 ## Reference
