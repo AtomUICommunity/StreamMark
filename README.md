@@ -7,7 +7,7 @@ High-performance streaming Markdown rendering for [Avalonia](https://avaloniaui.
 - **Scientific content**: KaTeX-grade LaTeX via the [RaTeX](https://github.com/erweixin/RaTeX) engine, Mermaid diagrams, TextMate syntax highlighting.
 - **NativeAOT-safe**: zero trim/AOT warnings is a CI gate.
 
-> Status: v0.1 preview — all plan milestones (M0–M7) implemented and integrated into TCode. See [docs/architecture.md](docs/architecture.md).
+> Status: 0.1.0, the first stable release — all plan milestones (M0–M7) implemented and integrated into TCode. See [docs/architecture.md](docs/architecture.md).
 
 ## Packages
 
@@ -38,14 +38,14 @@ Or in the project file:
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="TKCode.StreamMark.Avalonia" Version="0.1.0-alpha.24" />
-  <PackageReference Include="TKCode.StreamMark.Highlighting.TextMate" Version="0.1.0-alpha.24" />
-  <PackageReference Include="TKCode.StreamMark.RaTeX" Version="0.1.0-alpha.24" />
-  <PackageReference Include="TKCode.StreamMark.Mermaid" Version="0.1.0-alpha.24" />
+  <PackageReference Include="TKCode.StreamMark.Avalonia" Version="0.1.0" />
+  <PackageReference Include="TKCode.StreamMark.Highlighting.TextMate" Version="0.1.0" />
+  <PackageReference Include="TKCode.StreamMark.RaTeX" Version="0.1.0" />
+  <PackageReference Include="TKCode.StreamMark.Mermaid" Version="0.1.0" />
 </ItemGroup>
 ```
 
-`TKCode.StreamMark.Avalonia` brings in `TKCode.StreamMark.Core`. The RaTeX package carries `ratex_ffi` under `runtimes/<rid>/native/`, and the host picks the library for its own RID; nothing has to be copied by hand. Preview versions need the usual prerelease restore (`--prerelease`, which `dotnet add package` does on its own).
+`TKCode.StreamMark.Avalonia` brings in `TKCode.StreamMark.Core`. The RaTeX package carries `ratex_ffi` under `runtimes/<rid>/native/`, and the host picks the library for its own RID; nothing has to be copied by hand.
 
 Minimal app:
 
