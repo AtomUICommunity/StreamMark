@@ -80,6 +80,7 @@ sequenceDiagram
 
 诱人但会破坏东西的位置：
 - 在 `SnapshotReady` 的处理函数里直接碰控件或做重活——它在后台线程触发，契约要求只请求下一帧（`StreamingDocument.cs:49`、`MarkdownView.cs:138`）。
+- 按 `VisualRoot` 判断 `MarkdownView` 该不该订阅 `SnapshotReady`：Avalonia 12 在 `OnDetachedFromVisualTree` 之后才清空 `VisualRoot`，离开的视图会继续挂在文档上，比视图活得久的文档或 `MarkdownStream`（聊天消息）就一直留住它。订阅只看 `_attached`（`MarkdownView.cs:Subscribe`），`ViewLifetimeTests` 守着这一条。
 - 把带末尾补全的 remend 选项用在冻结片段上（`DocumentComposer.SettledOptions`，:21）：已完整的文本会被"补全"，且与整篇解析不一致。
 - 把 `_runCache.InvalidateFrom` 传差异点本身而不是差异点所在段落起点：每次追加都变成硬换行（`TextSegmentView.cs:174`）。
 - 在别处调用 `StreamPacer.Push` / `Tick`（必须同一线程，`StreamPacer.cs:58`），或在 `Finish` 之后继续 `Push`；界面线程之外读 `BlockStateStore` / `CodeBlockState`（约定只在界面线程访问，`BlockStateStore.cs:6`、`CodeBlockState.cs:9`）。

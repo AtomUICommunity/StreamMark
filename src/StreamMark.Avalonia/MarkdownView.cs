@@ -195,9 +195,13 @@ public class MarkdownView : Control, ISelectionHost
         RequestFrame();
     }
 
+    // 只在挂到可视树期间订阅文档：Avalonia 12 在 OnDetachedFromVisualTree 之后才清空 VisualRoot，
+    // 按 VisualRoot 判断会让离开的视图继续挂在文档上，比视图活得久的文档或流（聊天消息）就会一直留住它。
+    private bool _attached;
+
     private void Subscribe()
     {
-        var document = VisualRoot is null ? null : EffectiveDocument;
+        var document = _attached ? EffectiveDocument : null;
         if (ReferenceEquals(document, _subscribed))
         {
             return;
@@ -352,6 +356,7 @@ public class MarkdownView : Control, ISelectionHost
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
+        _attached = true;
         if (Stream is null && Document is null && _ownDocument is null)
         {
             OnSourceChanged();
@@ -364,6 +369,7 @@ public class MarkdownView : Control, ISelectionHost
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
+        _attached = false;
         Subscribe();
     }
 
