@@ -48,6 +48,14 @@ public sealed class CodeBlockView : BlockView
     private readonly List<TextLayout> _numbers = [];
     private double _gutter;
     private SegmentKey _segmentKey;
+    // Avalonia 在块的 Bounds 变化（哪怕只是位置）时重跑 Render：上方内容展开时块每帧都在移动。
+    // 边框笔、分段外形与折叠渐隐按输入缓存，不在每次 Render 里新建（Pen 与画刷的构造要走属性系统）。
+    private IPen? _framePen;
+    private IBrush? _framePenBrush;
+    private StreamGeometry? _chunkGeometry;
+    private (Size Size, double Top, double Bottom) _chunkGeometryKey;
+    private IBrush? _fadeBrush;
+    private Color _fadeColor;
 
     public CodeBlockView()
     {
@@ -338,38 +346,50 @@ public sealed class CodeBlockView : BlockView
         var bounds = new Rect(Bounds.Size).Deflate(0.5);
         if (_chunkCount == 1)
         {
-            context.DrawRectangle(style.CodeBackground, new Pen(style.CodeBorderBrush, 1), bounds, r, r);
+            if (_framePen is null || !ReferenceEquals(_framePenBrush, style.CodeBorderBrush))
+            {
+                _framePenBrush = style.CodeBorderBrush;
+                _framePen = new Pen(style.CodeBorderBrush, 1);
+            }
+            context.DrawRectangle(style.CodeBackground, _framePen, bounds, r, r);
         }
         else
         {
             // 分段：首段只有上圆角，末段只有下圆角，中间段直角；各段背景首尾相接
             var top = IsFirstChunk ? r : 0;
             var bottom = IsLastChunk ? r : 0;
-            var geometry = new StreamGeometry();
-            using (var g = geometry.Open())
+            var key = (Bounds.Size, top, bottom);
+            var geometry = _chunkGeometry;
+            if (geometry is null || _chunkGeometryKey != key)
             {
-                g.BeginFigure(new Point(bounds.Left + top, bounds.Top), true);
-                g.LineTo(new Point(bounds.Right - top, bounds.Top));
-                if (top > 0)
+                geometry = new StreamGeometry();
+                using (var g = geometry.Open())
                 {
-                    g.ArcTo(new Point(bounds.Right, bounds.Top + top), new Size(top, top), 0, false, SweepDirection.Clockwise);
+                    g.BeginFigure(new Point(bounds.Left + top, bounds.Top), true);
+                    g.LineTo(new Point(bounds.Right - top, bounds.Top));
+                    if (top > 0)
+                    {
+                        g.ArcTo(new Point(bounds.Right, bounds.Top + top), new Size(top, top), 0, false, SweepDirection.Clockwise);
+                    }
+                    g.LineTo(new Point(bounds.Right, bounds.Bottom - bottom));
+                    if (bottom > 0)
+                    {
+                        g.ArcTo(new Point(bounds.Right - bottom, bounds.Bottom), new Size(bottom, bottom), 0, false, SweepDirection.Clockwise);
+                    }
+                    g.LineTo(new Point(bounds.Left + bottom, bounds.Bottom));
+                    if (bottom > 0)
+                    {
+                        g.ArcTo(new Point(bounds.Left, bounds.Bottom - bottom), new Size(bottom, bottom), 0, false, SweepDirection.Clockwise);
+                    }
+                    g.LineTo(new Point(bounds.Left, bounds.Top + top));
+                    if (top > 0)
+                    {
+                        g.ArcTo(new Point(bounds.Left + top, bounds.Top), new Size(top, top), 0, false, SweepDirection.Clockwise);
+                    }
+                    g.EndFigure(true);
                 }
-                g.LineTo(new Point(bounds.Right, bounds.Bottom - bottom));
-                if (bottom > 0)
-                {
-                    g.ArcTo(new Point(bounds.Right - bottom, bounds.Bottom), new Size(bottom, bottom), 0, false, SweepDirection.Clockwise);
-                }
-                g.LineTo(new Point(bounds.Left + bottom, bounds.Bottom));
-                if (bottom > 0)
-                {
-                    g.ArcTo(new Point(bounds.Left, bounds.Bottom - bottom), new Size(bottom, bottom), 0, false, SweepDirection.Clockwise);
-                }
-                g.LineTo(new Point(bounds.Left, bounds.Top + top));
-                if (top > 0)
-                {
-                    g.ArcTo(new Point(bounds.Left + top, bounds.Top), new Size(top, top), 0, false, SweepDirection.Clockwise);
-                }
-                g.EndFigure(true);
+                _chunkGeometry = geometry;
+                _chunkGeometryKey = key;
             }
             context.DrawGeometry(style.CodeBackground, null, geometry);
         }
@@ -390,13 +410,17 @@ public sealed class CodeBlockView : BlockView
             // 折叠：代码区底部渐隐到背景色
             var fadeHeight = Math.Min(36, _code.Bounds.Height);
             var top = _code.Bounds.Bottom - fadeHeight;
-            var fade = new LinearGradientBrush
+            if (_fadeBrush is null || _fadeColor != bg)
             {
-                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
-                GradientStops = { new GradientStop(Color.FromArgb(0, bg.R, bg.G, bg.B), 0), new GradientStop(bg, 1) },
-            };
-            context.FillRectangle(fade, new Rect(1, top, Bounds.Width - 2, fadeHeight));
+                _fadeColor = bg;
+                _fadeBrush = new LinearGradientBrush
+                {
+                    StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                    EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+                    GradientStops = { new GradientStop(Color.FromArgb(0, bg.R, bg.G, bg.B), 0), new GradientStop(bg, 1) },
+                };
+            }
+            context.FillRectangle(_fadeBrush, new Rect(1, top, Bounds.Width - 2, fadeHeight));
         }
     }
 

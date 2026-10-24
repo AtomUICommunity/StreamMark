@@ -187,6 +187,9 @@ public sealed class TableBlockView : BlockView
         return finalSize;
     }
 
+    private IPen? _gridPen;
+    private IBrush? _gridPenBrush;
+
     public override void Render(DrawingContext context)
     {
         if (Context is null || _rowHeights.Length == 0)
@@ -194,7 +197,13 @@ public sealed class TableBlockView : BlockView
             return;
         }
         var style = Context.Style;
-        var pen = new Pen(style.TableBorderBrush, 1);
+        // 块移动（上方内容展开）时 Render 每帧都会重跑：笔按画刷缓存，不每次新建
+        if (_gridPen is null || !ReferenceEquals(_gridPenBrush, style.TableBorderBrush))
+        {
+            _gridPenBrush = style.TableBorderBrush;
+            _gridPen = new Pen(style.TableBorderBrush, 1);
+        }
+        var pen = _gridPen;
         var width = _contentWidth;
         var height = _rowHeights.Sum();
         using (context.PushTransform(Matrix.CreateTranslation(_shift - _offsetX, ActionBarHeight)))
