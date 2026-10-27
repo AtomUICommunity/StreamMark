@@ -287,7 +287,35 @@ public sealed class TextSegmentView : Control, ISelectableSegment
         }
     }
 
-    private void OnSelectionChanged() => InvalidateVisual();
+    private void OnSelectionChanged()
+    {
+        InvalidateVisual();
+        // 带底色的行（行内代码等）把选区画在自己的行视觉里，需要跟着重录
+        if (_layout is { } layout)
+        {
+            for (var i = 0; i < _lines.Count && i < layout.LineCount; i++)
+            {
+                if (HasBackgroundSpan(layout.LineStart(i), layout.LineStart(i) + layout.LineLength(i)))
+                {
+                    _lines[i].InvalidateVisual();
+                }
+            }
+        }
+    }
+
+    private static bool HasBackground(InlineStyle style) => (style & (InlineStyle.Code | InlineStyle.Keyboard | InlineStyle.Mark)) != 0;
+
+    private bool HasBackgroundSpan(int lineStart, int lineEnd)
+    {
+        foreach (var span in _content.Spans)
+        {
+            if (HasBackground(span.Style) && span.End > lineStart && span.Start < lineEnd)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
 
     protected override Size MeasureOverride(Size availableSize)
     {
@@ -405,6 +433,37 @@ public sealed class TextSegmentView : Control, ISelectableSegment
             line.Draw(context, default);
         }
         DrawStrikethrough(context, layout, index);
+        DrawSelectionOverBackgrounds(context, layout, index);
+    }
+
+    // 选区在片段视图里画在文字下方，会被行内代码等 run 底色盖住；底色范围内的选中部分在这里补画一层，
+    // 让选中的代码和普通文字一样呈现选区色
+    private void DrawSelectionOverBackgrounds(DrawingContext context, SegmentLayout layout, int index)
+    {
+        if (_context is null || _context.Selection.GetSegmentRange(Key, _content.Text.Length) is not { } selected)
+        {
+            return;
+        }
+        var lineStart = layout.LineStart(index);
+        var lineEnd = lineStart + layout.LineLength(index);
+        var top = layout.LineTop(index);
+        foreach (var span in _content.Spans)
+        {
+            if (!HasBackground(span.Style))
+            {
+                continue;
+            }
+            var start = Math.Max(Math.Max(span.Start, selected.Start), lineStart);
+            var end = Math.Min(Math.Min(span.End, selected.End), lineEnd);
+            if (end <= start)
+            {
+                continue;
+            }
+            foreach (var rect in layout.HitTestTextRange(start, end - start))
+            {
+                context.FillRectangle(_context.Style.SelectionBackground, rect.Translate(new Vector(0, -top)));
+            }
+        }
     }
 
     /// <summary>重新计算末尾渐显（排版、末尾状态变化或渐显结束时）。</summary>
