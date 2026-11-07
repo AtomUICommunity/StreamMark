@@ -29,14 +29,22 @@ public static class BlockText
         }
     }
 
-    public static List<Segment> Segments(MarkdownBlock block)
+    public static List<Segment> Segments(MarkdownBlock block) => Segments(block, null);
+
+    /// <summary>
+    /// 带插件注册表的版本：组件登记了复制文本（<see cref="Plugins.MarkdownPluginBuilder.AddBlockComponent(string, Func{ComponentBlock, Rendering.BlockView}, Plugins.ComponentTextCollector, bool)"/>）
+    /// 时按它收集。视图、选区、搜索与导航都要用同一个注册表调用，否则片段编号对不上。
+    /// </summary>
+    public static List<Segment> Segments(MarkdownBlock block, Plugins.PluginRegistry? plugins)
     {
         var list = new List<Segment>();
-        Collect(block, list, "");
+        Collect(block, list, "", plugins);
         return list;
     }
 
-    private static void Collect(MarkdownBlock block, List<Segment> list, string prefix)
+    internal static void CollectInto(MarkdownBlock block, List<Segment> list, Plugins.PluginRegistry? plugins) => Collect(block, list, "", plugins);
+
+    private static void Collect(MarkdownBlock block, List<Segment> list, string prefix, Plugins.PluginRegistry? plugins)
     {
         switch (block)
         {
@@ -68,36 +76,39 @@ public static class BlockText
             case AlertBlock alert:
                 foreach (var child in alert.Children)
                 {
-                    Collect(child, list, "");
+                    Collect(child, list, "", plugins);
                 }
                 break;
             case HtmlBoxBlock box:
                 foreach (var child in box.Children)
                 {
-                    Collect(child, list, prefix);
+                    Collect(child, list, prefix, plugins);
                 }
                 break;
             case QuoteBlock quote:
                 foreach (var child in quote.Children)
                 {
-                    Collect(child, list, "");
+                    Collect(child, list, "", plugins);
                 }
+                break;
+            case ComponentBlock component when plugins?.FindComponentText(component) is { } text:
+                text(component, new Plugins.ComponentTextContext(list, plugins));
                 break;
             case ComponentBlock component:
                 // summary 在前（折叠块的标题），其余子块按顺序
                 foreach (var child in component.Children.Where(c => c is ComponentBlock { Name: "summary" }))
                 {
-                    Collect(child, list, "");
+                    Collect(child, list, "", plugins);
                 }
                 foreach (var child in component.Children.Where(c => c is not ComponentBlock { Name: "summary" }))
                 {
-                    Collect(child, list, "");
+                    Collect(child, list, "", plugins);
                 }
                 break;
             case CustomContainerBlock container:
                 foreach (var child in container.Children)
                 {
-                    Collect(child, list, "");
+                    Collect(child, list, "", plugins);
                 }
                 break;
             case ListBlock items:
@@ -112,7 +123,7 @@ public static class BlockText
                     };
                     for (var c = 0; c < item.Children.Length; c++)
                     {
-                        Collect(item.Children[c], list, c == 0 ? marker : "");
+                        Collect(item.Children[c], list, c == 0 ? marker : "", plugins);
                     }
                 }
                 break;
@@ -121,7 +132,7 @@ public static class BlockText
                 {
                     for (var c = 0; c < footnote.Children.Length; c++)
                     {
-                        Collect(footnote.Children[c], list, c == 0 ? $"[{footnote.Order}] " : "");
+                        Collect(footnote.Children[c], list, c == 0 ? $"[{footnote.Order}] " : "", plugins);
                     }
                 }
                 break;
@@ -134,7 +145,7 @@ public static class BlockText
                     }
                     foreach (var definition in item.Definitions)
                     {
-                        Collect(definition, list, "");
+                        Collect(definition, list, "", plugins);
                     }
                 }
                 break;

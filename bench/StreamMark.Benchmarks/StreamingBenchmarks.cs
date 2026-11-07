@@ -44,6 +44,47 @@ public class StreamingBenchmarks
     }
 }
 
+/// <summary>
+/// 含工具调用的聊天文档（每节后面一个 &lt;tool-call&gt;，内容是带 ** / 反引号 / 下划线的 JSON）：
+/// 同一段文本分别按默认方言（未登记，HTML 块）、Markdown 内容组件、原样内容组件流完，看遮盖带来的成本。
+/// </summary>
+[MemoryDiagnoser]
+public class RawComponentBenchmarks
+{
+    private string _document = "";
+    private MarkdownProfile _markdown = MarkdownProfile.Default;
+    private MarkdownProfile _raw = MarkdownProfile.Default;
+
+    [GlobalSetup]
+    public void Setup()
+    {
+        _document = BenchmarkDocuments.ChatWithToolCalls(20 * 1024);
+        _markdown = new MarkdownProfileBuilder().AddComponent(new ComponentSpec("tool-call", ComponentKind.Block)).Build();
+        _raw = new MarkdownProfileBuilder().AddComponent(new ComponentSpec("tool-call", ComponentKind.Block) { Content = ComponentContent.Raw }).Build();
+    }
+
+    [Benchmark(Baseline = true, Description = "tool-call not registered (HTML block)")]
+    public int Unregistered() => Stream(MarkdownProfile.Default);
+
+    [Benchmark(Description = "tool-call as Markdown component")]
+    public int MarkdownComponent() => Stream(_markdown);
+
+    [Benchmark(Description = "tool-call as Raw component (masked)")]
+    public int RawComponent() => Stream(_raw);
+
+    private int Stream(MarkdownProfile profile)
+    {
+        var composer = new DocumentComposer(profile);
+        var blocks = 0;
+        for (var i = 4; i <= _document.Length; i += 4)
+        {
+            var from = composer.FrozenEnd;
+            blocks += composer.Update(_document[from..i], from, i).Count;
+        }
+        return blocks + composer.Finish(_document, long.MaxValue).Count;
+    }
+}
+
 [MemoryDiagnoser]
 public class RemendBenchmarks
 {
@@ -91,6 +132,25 @@ internal static class BenchmarkDocuments
 
 
             """;
+        var sb = new System.Text.StringBuilder();
+        while (sb.Length < targetLength)
+        {
+            sb.Append(unit);
+        }
+        return sb.ToString(0, targetLength);
+    }
+
+    public static string ChatWithToolCalls(int targetLength)
+    {
+        const string call = """
+            <tool-call name="read_file">
+            {"file_path": "src/app_main.cs", "query": "**bold** and `code`",
+             "limit": 40, "pattern": "a_b_c ~ 20~25 $x$"}
+            </tool-call>
+
+
+            """;
+        var unit = Chat(1200) + "\n\n" + call;
         var sb = new System.Text.StringBuilder();
         while (sb.Length < targetLength)
         {

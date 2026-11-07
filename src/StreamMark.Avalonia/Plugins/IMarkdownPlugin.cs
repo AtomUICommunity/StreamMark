@@ -35,19 +35,38 @@ public sealed class MarkdownPluginBuilder
     internal IMathRenderer? Math { get; private set; }
     internal ISyntaxHighlighter? Highlighter { get; private set; }
     internal List<IDiagramRenderer> Diagrams { get; } = [];
-    internal Dictionary<string, Func<ComponentBlock, BlockView>> BlockComponents { get; } = new(StringComparer.OrdinalIgnoreCase);
+    internal Dictionary<string, BlockComponentRegistration> BlockComponents { get; } = new(StringComparer.OrdinalIgnoreCase);
     internal Dictionary<string, IInlineComponentRenderer> InlineComponents { get; } = new(StringComparer.OrdinalIgnoreCase);
     internal Dictionary<string, FenceViewRegistration> FenceViews { get; } = new(StringComparer.OrdinalIgnoreCase);
     internal List<BlockActionDescriptor> BlockActions { get; } = [];
+    internal List<PluginDiagnostic> Diagnostics { get; } = [];
+
+    /// <summary>正在 Configure 的插件（登记者）。</summary>
+    internal string CurrentPlugin { get; set; } = "";
+
+    private readonly Dictionary<string, string> _owners = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>记下登记者；同一项已被别的插件（或同一插件之前）登记过时记一条覆盖诊断。</summary>
+    internal void Claim(string key)
+    {
+        if (_owners.TryGetValue(key, out var previous))
+        {
+            Diagnostics.Add(new PluginDiagnostic(PluginDiagnosticKind.Replaced,
+                $"'{CurrentPlugin}' replaced the {key} registered by '{previous}'.", key, CurrentPlugin, previous));
+        }
+        _owners[key] = CurrentPlugin;
+    }
 
     public MarkdownPluginBuilder UseMath(IMathRenderer renderer)
     {
+        Claim("math");
         Math = renderer;
         return this;
     }
 
     public MarkdownPluginBuilder UseHighlighter(ISyntaxHighlighter highlighter)
     {
+        Claim("highlighter");
         Highlighter = highlighter;
         return this;
     }
@@ -63,12 +82,28 @@ public sealed class MarkdownPluginBuilder
     /// 块级组件视图。<paramref name="name"/> 对应白名单标签（若尚未登记，会自动登记为块级组件）。
     /// 工厂只负责创建；内容通过 <see cref="BlockView.Update"/> 下发（同名组件的新模型会复用同一视图）。
     /// </summary>
-    public MarkdownPluginBuilder AddBlockComponent(string name, Func<ComponentBlock, BlockView> factory, bool registerTag = true)
+    public MarkdownPluginBuilder AddBlockComponent(string name, Func<ComponentBlock, BlockView> factory, bool registerTag = true) =>
+        AddBlockComponent(name, factory, new BlockComponentOptions { RegisterTag = registerTag });
+
+    /// <summary>
+    /// 块级组件视图，并指定它的复制 / 选区 / 搜索文本。视图除了子块之外还显示自己的文本（例如从属性取的标题）时用这个重载，
+    /// 否则选区与复制会和视图的片段编号错位。没有指定时按默认规则收集子块。
+    /// </summary>
+    public MarkdownPluginBuilder AddBlockComponent(string name, Func<ComponentBlock, BlockView> factory, ComponentTextCollector text, bool registerTag = true) =>
+        AddBlockComponent(name, factory, new BlockComponentOptions { Text = text, RegisterTag = registerTag });
+
+    /// <summary>
+    /// 块级组件视图的完整登记：内容模式（Markdown / 原样）、复制文本、流式中是否就用这个视图。
+    /// 同名再次登记时整体覆盖（包括复制文本）。
+    /// </summary>
+    public MarkdownPluginBuilder AddBlockComponent(string name, Func<ComponentBlock, BlockView> factory, BlockComponentOptions options)
     {
-        BlockComponents[name] = factory;
-        if (registerTag)
+        ArgumentNullException.ThrowIfNull(options);
+        Claim("block:" + name);
+        BlockComponents[name] = new BlockComponentRegistration(factory, options.Text, options.WhileStreaming);
+        if (options.RegisterTag)
         {
-            Profile.AddComponent(new ComponentSpec(name, ComponentKind.Block));
+            Profile.AddComponent(new ComponentSpec(name, ComponentKind.Block) { Content = options.Content });
         }
         return this;
     }
@@ -76,6 +111,7 @@ public sealed class MarkdownPluginBuilder
     /// <summary>行内组件渲染器（自闭合组件绘制为嵌入对象，成对组件提供样式与点击）。</summary>
     public MarkdownPluginBuilder AddInlineComponent(string name, IInlineComponentRenderer renderer, ComponentKind kind = ComponentKind.SelfClosing, bool registerTag = true)
     {
+        Claim("inline:" + name);
         InlineComponents[name] = renderer;
         if (registerTag)
         {
@@ -87,11 +123,12 @@ public sealed class MarkdownPluginBuilder
     /// <summary>按围栏语言替换代码块视图（如 diff）。默认只在代码块闭合后替换，流式中仍按普通代码显示。</summary>
     public MarkdownPluginBuilder AddFenceView(string language, Func<CodeBlock, BlockView> factory, bool whileStreaming = false)
     {
+        Claim("fence:" + language);
         FenceViews[language] = new FenceViewRegistration(factory, whileStreaming);
         return this;
     }
 
-    /// <summary>代码块（及表格、图表）头部的操作按钮。</summary>
+    /// <summary>块头部的操作按钮：默认只出现在代码块上，用 <see cref="BlockActionDescriptor.Targets"/> 扩展到表格、图表。</summary>
     public MarkdownPluginBuilder AddBlockAction(BlockActionDescriptor action)
     {
         BlockActions.Add(action);
@@ -100,6 +137,31 @@ public sealed class MarkdownPluginBuilder
 }
 
 internal sealed record FenceViewRegistration(Func<CodeBlock, BlockView> Factory, bool WhileStreaming);
+
+internal sealed record BlockComponentRegistration(Func<ComponentBlock, BlockView> Factory, ComponentTextCollector? Text, bool WhileStreaming);
+
+/// <summary><see cref="MarkdownPluginBuilder.AddBlockComponent(string, Func{ComponentBlock, BlockView}, BlockComponentOptions)"/> 的选项。</summary>
+public sealed record BlockComponentOptions
+{
+    /// <summary>
+    /// 组件内部内容的处理方式。<see cref="ComponentContent.Raw"/>：内容是数据（JSON、图表描述等），原样放进
+    /// <see cref="ComponentBlock.Raw"/>，不按 Markdown 解析，remend 也不会在其中补全或转义。只在 <see cref="RegisterTag"/> 为 true 时生效。
+    /// </summary>
+    public ComponentContent Content { get; init; } = ComponentContent.Markdown;
+
+    /// <summary>
+    /// 结束标签出现之前（<see cref="ComponentBlock.IsOpen"/>）是否就用这个视图。false 时流式中先按默认容器显示
+    /// （Markdown 内容照常显示子块，原样内容不显示），闭合后再换成插件视图，语义与 <c>AddFenceView</c> 的 whileStreaming 相同。
+    /// 默认 true：视图在流式中每帧收到新模型，自己负责增量显示。
+    /// </summary>
+    public bool WhileStreaming { get; init; } = true;
+
+    /// <summary>复制 / 选区 / 搜索文本；null 时按默认规则收集子块。片段个数与顺序必须与视图消耗的片段号一致。</summary>
+    public ComponentTextCollector? Text { get; init; }
+
+    /// <summary>同时把 name 登记为白名单块级标签（默认 true）；false 时标签须已由别处登记。</summary>
+    public bool RegisterTag { get; init; } = true;
+}
 
 /// <summary>行内组件渲染器。</summary>
 public interface IInlineComponentRenderer
@@ -123,15 +185,36 @@ public sealed record InlineComponentStyle(IBrush? Foreground = null, IBrush? Bac
 /// <summary>创建行内组件绘制对象时的上下文。</summary>
 public sealed record InlineComponentContext(MarkdownStyle Style, double FontSize, IBrush Foreground, TextRunProperties Properties, double MaxWidth);
 
-/// <summary>块头部操作。</summary>
+/// <summary>块操作出现在哪类块的头部。</summary>
+[Flags]
+public enum BlockActionTargets
+{
+    /// <summary>代码块（<see cref="BlockActionDescriptor.AppliesTo"/> 收到 <see cref="CodeBlock"/>）。</summary>
+    Code = 1,
+
+    /// <summary>表格（收到 <see cref="TableBlock"/>；按钮与复制、全屏一起在悬停时出现）。</summary>
+    Table = 2,
+
+    /// <summary>已渲染为图表的代码块（收到 <see cref="CodeBlock"/>）。</summary>
+    Diagram = 4,
+}
+
+/// <summary>
+/// 块头部操作。<see cref="AppliesTo"/> 在视图拿到新的渲染上下文、首次显示，或代码块的信息串变化时求值，
+/// 不在每次内容更新时求值；它与 <see cref="Execute"/> 都在界面线程调用。
+/// </summary>
 public sealed record BlockActionDescriptor(
     string Id,
     string Label,
     Geometry Icon,
     Func<MarkdownBlock, bool> AppliesTo,
-    Func<BlockActionContext, Task> Execute);
+    Func<BlockActionContext, Task> Execute)
+{
+    /// <summary>出现在哪类块上（默认只有代码块，与早期版本一致）。</summary>
+    public BlockActionTargets Targets { get; init; } = BlockActionTargets.Code;
+}
 
-/// <summary>执行块操作时的上下文。</summary>
+/// <summary>执行块操作时的上下文。<see cref="Fence"/> 只有代码块与图表才有。</summary>
 public sealed record BlockActionContext(MarkdownBlock Block, Control View, CodeFenceInfo? Fence);
 
 /// <summary>代码围栏信息串解析结果：<c>```cs src/App.cs#L10-20</c>。</summary>

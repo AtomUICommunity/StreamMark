@@ -87,13 +87,13 @@ var services = new MarkdownServices
     Plugins = [new RaTeXPlugin(), new TextMatePlugin(), new MermaidPlugin()],
 };
 MarkdownServices.SetServices(window, services);
-// documents should use the matching dialect so plugin tags are parsed
-var entry = MarkdownEntry.FromText(markdown, services.Profile);
+// create documents from the services so plugin tags are parsed (same as passing services.Profile)
+var entry = services.CreateEntry(markdown);
 
 // Long chat transcript (virtualized, cross-message selection, stick-to-bottom)
 var transcript = new TranscriptView { MaxContentWidth = 760 };
 transcript.Entries.Add(new ContentEntry(userBubble));          // any control / data-templated item
-var reply = new MarkdownStream(profile: services.Profile);       // smoothing + fade-in + caret
+var reply = services.CreateStream();                             // smoothing + fade-in + caret
 transcript.Entries.Add(new MarkdownEntry(reply));
 reply.Push(token);  /* … */  reply.Complete();
 

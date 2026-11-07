@@ -78,7 +78,7 @@ public sealed class CollapsibleBlockView : BlockView
         _hasSummary = summary is not null;
         if (summary is not null)
         {
-            segment += Math.Max(0, CountSegments(summary) - 1);
+            segment += Math.Max(0, CountSegments(summary, context.Plugins) - 1);
         }
         var defaultOpen = component.Attributes["open"] is not null;
         _open = context.State.Get(topKey, StateName, defaultOpen);
@@ -89,7 +89,7 @@ public sealed class CollapsibleBlockView : BlockView
         InvalidateVisual();
     }
 
-    private static int CountSegments(MarkdownBlock block) => BlockText.Segments(block).Count;
+    private static int CountSegments(MarkdownBlock block, PluginRegistry plugins) => BlockText.Segments(block, plugins).Count;
 
     public void Toggle()
     {

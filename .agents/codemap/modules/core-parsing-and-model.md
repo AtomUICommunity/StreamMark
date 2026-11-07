@@ -14,7 +14,7 @@ updated: 2026-10-16
 |---|---|---|
 | `MarkdownProfile.Default` | `src/StreamMark.Core/Parsing/MarkdownProfile.cs:Default` | 默认方言静态单例，首次访问即构建；不传 profile 时的兜底（`DocumentComposer.cs:44`、`StreamingDocument.cs:39`） |
 | `MarkdownProfileBuilder` | `src/StreamMark.Core/Parsing/MarkdownProfile.cs:MarkdownProfileBuilder` | 唯一的方言装配点：`AddMarkdigExtension` / `AddComponent` / `MapBlock<T>` / `MapInline<T>` / `AddRemendHandler` / `Build` |
-| `ComponentSpec` + `ComponentKind` | `src/StreamMark.Core/Parsing/ComponentSpec.cs:ComponentSpec` | 白名单 HTML 组件的声明（块级 / 行内成对 / 自闭合），插件在此扩标签 |
+| `ComponentSpec` + `ComponentKind` + `ComponentContent` | `src/StreamMark.Core/Parsing/ComponentSpec.cs:ComponentSpec` | 白名单 HTML 组件的声明（块级 / 行内成对 / 自闭合），插件在此扩标签；块级组件的 `Content` 为 `Markdown`（默认）或 `Raw`（内容原样保留） |
 | `StreamMarkPipeline.Default` | `src/StreamMark.Core/Parsing/StreamMarkPipeline.cs:Default` | `MarkdownProfile.Default.Pipeline` 的别名；仓库内唯一调用方是基准测试（`bench/StreamMark.Benchmarks/StreamingBenchmarks.cs:28`） |
 | `BackslashMathExtension` | `src/StreamMark.Core/Parsing/BackslashMathExtension.cs:BackslashMathExtension` | 公开扩展：`\(…\)` / `\[…\]` 数学定界符 |
 | `MarkdigMapper.MapDocument` | `src/StreamMark.Core/Parsing/MarkdigMapper.cs:MapDocument` | `internal`，整篇 Markdig 文档 → 块模型；`DocumentComposer.Parse` 是唯一生产调用方（`DocumentComposer.cs:115`） |
@@ -54,7 +54,7 @@ updated: 2026-10-16
 ## State it owns
 - 唯一的全局可变状态是 `MarkdownProfile.Default` 静态单例（`MarkdownProfile.cs:Default`），构造后不可变；其余 `MarkdownProfile` 实例由调用方持有（`PluginRegistry.Profile`、`StreamingDocument.Profile`）。
 - `MarkdownProfile._segmenterContainers` 是**无锁惰性字段**（`MarkdownProfile.cs:52-57`）：并发构造文档（多线程各自 `new DocumentComposer`）时可能重复计算，且 `ImmutableArray<T>` 赋值不是原子操作 —— 理论上有撕裂读风险，代码里没有任何同步（未验证，无测试覆盖）。
-- `ComponentTable` 每个 profile 一份，只读字典 + `BlockNames`（`ComponentSpec.cs:ComponentTable`）。
+- `ComponentTable` 每个 profile 一份，只读字典 + `BlockNames`（Markdown 内容）+ `RawBlockNames`（原样内容）（`ComponentSpec.cs:ComponentTable`）。
 - `HtmlTreeBuilder` 的开放元素栈 `_open`（`HtmlTree.cs:66`）是**每次 `new` 一份**的临时状态，`MarkdigMapper.HtmlGroup`（`MarkdigMapper.cs:86`）为每组兄弟块新建一个；不跨解析复用。
 - 源码文本本身不在这里：真相是 `StreamingDocument._source`（`src/StreamMark.Core/Streaming/StreamingDocument.cs:20`）；块模型是派生物，`DocumentSnapshot` 持有冻结前缀 + 尾部（`src/StreamMark.Core/Streaming/DocumentSnapshot.cs:11`）。
 - 没有缓存、没有持久化、没有静态可变表（除了上面的惰性字段）。
@@ -62,6 +62,7 @@ updated: 2026-10-16
 ## Contracts it exposes
 - `ComponentKind` 三种语义，逐一对应解析器行为：`Block`（行首开始标签、内容按 Markdown、可跨空行可嵌套）、`InlinePair`、`SelfClosing` — `src/StreamMark.Core/Parsing/ComponentSpec.cs:6-14`。
 - 内置白名单固定 11 个：`details` / `summary` / `think`（Block）、`kbd` / `sub` / `sup` / `mark` / `u` / `cite`（InlinePair）、`citation` / `img`（SelfClosing）— `ComponentSpec.cs:20-33`；其中 `kbd|sub|sup|mark|u` 不产生组件，而是映射为 `InlineStyle`（`ComponentSpec.cs:StyleFor`，消费点 `MarkdigMapper.cs:481`）。
+- 原样组件（`ComponentContent.Raw`）：解析成叶子块 `HtmlRawComponentBlock`（`HtmlComponentExtension.cs`，`ProcessInlines = false`，续行先 `GoToColumn(ColumnBeforeIndent)` 保留缩进），映射为 `ComponentBlock { Raw, IsOpen }`、`Children` 为空（`MarkdigMapper.cs:MapRawComponent`）。`Raw` 逐行经 `OffsetMap.SourceText` 从原文取，看不到 remend 的转义 / 补全与解析前的遮盖。结束标签必须在行尾；不支持同名嵌套。所有块级组件都带 `IsOpen`（没见到自己的结束标签，包括随外层块结束的情况），两个新字段都在指纹里。
 - 重名覆盖：后登记的 `ComponentSpec` 覆盖先登记的（`MarkdownProfile.cs:79`）；标签名一律不区分大小写（`ComponentSpec.cs:50`）。
 - HTML 支持元素表（单一来源）：`Block` / `Inline` / `Void` / `Containers` 四个集合 —— `HtmlTree.cs:12`、`:19`、`:25`、`:29`；`IsKnown` = Block ∪ Inline（`HtmlTree.cs:32`）。`Containers` 只用于切分器（未闭合就不冻结），不参与渲染判断。
 - 管线注册顺序（`MarkdownProfile.cs:105-128`）：先 `Use…` 系列（PipeTables+GFM 规则、仅 Strikethrough 的 EmphasisExtras、TaskLists、AutoLinks、Footnotes、AlertBlocks、DefinitionLists、CustomContainers、Mathematics、CjkFriendlyEmphasis、EmojiAndSmiley(无颜文字)、AutoIdentifiers(GitHub)、`BackslashMathExtension`），再 `HtmlComponentExtension`（`:122`），最后按登记顺序 append 插件扩展（`:123-126`）。`StreamMarkPipeline.cs:9-11` 是"只开删除线"的唯一解释处。

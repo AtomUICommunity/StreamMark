@@ -32,7 +32,7 @@ public sealed class CodeBlockView : BlockView
     private readonly IconButton _download = new() { Icon = MarkdownIcons.Download };
     private readonly IconButton _expand = new() { Icon = MarkdownIcons.Chevron, IsVisible = false };
     private readonly CodeTextView _code = new();
-    private readonly List<(IconButton Button, Plugins.BlockActionDescriptor Action)> _actions = [];
+    private readonly BlockActionBar _actions;
     private TextLayout? _title;
     private DispatcherTimer? _copiedTimer;
     private int _chunk;
@@ -59,6 +59,7 @@ public sealed class CodeBlockView : BlockView
 
     public CodeBlockView()
     {
+        _actions = new BlockActionBar(this, AddChild, RemoveChild);
         AddChild(_code);
         AddChild(_download);
         AddChild(_wrap);
@@ -197,7 +198,7 @@ public sealed class CodeBlockView : BlockView
             }
             _title = new TextLayout(title, new Typeface(style.MonospaceFontFamily), style.CodeFontSize * 0.92, style.SecondaryForeground,
                 textTrimming: TextTrimming.CharacterEllipsis, maxWidth: 480);
-            UpdateActions(context, code);
+            _actions.Rebuild(context, Plugins.BlockActionTargets.Code, code, IsFirstChunk);
             foreach (var button in HeaderButtons)
             {
                 button.Foreground = style.SecondaryForeground;
@@ -254,34 +255,6 @@ public sealed class CodeBlockView : BlockView
         }
     }
 
-    // 插件注册的头部操作（例如"应用到文件""在终端运行"）
-    private void UpdateActions(RenderContext context, CodeBlock code)
-    {
-        foreach (var (button, _) in _actions)
-        {
-            RemoveChild(button);
-        }
-        _actions.Clear();
-        foreach (var action in context.Plugins.BlockActions)
-        {
-            if (!action.AppliesTo(code))
-            {
-                continue;
-            }
-            var button = new IconButton { Icon = action.Icon, IsVisible = IsFirstChunk };
-            ToolTip.SetTip(button, action.Label);
-            button.Click += async (_, _) =>
-            {
-                if (Block is CodeBlock current)
-                {
-                    await action.Execute(new Plugins.BlockActionContext(current, this, Plugins.CodeFenceInfo.Parse(current.Info)));
-                }
-            };
-            _actions.Add((button, action));
-            AddChild(button);
-        }
-    }
-
     private async Task CopyAsync()
     {
         if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard)
@@ -299,7 +272,8 @@ public sealed class CodeBlockView : BlockView
         _copiedTimer.Start();
     }
 
-    private IEnumerable<IconButton> HeaderButtons => new[] { _copy, _wrap, _download }.Concat(_actions.Select(a => a.Button));
+    // 插件操作（例如"应用到文件""在终端运行"）排在内置按钮左边
+    private IEnumerable<IconButton> HeaderButtons => new[] { _copy, _wrap, _download }.Concat(_actions.Buttons);
 
     protected override Size MeasureOverride(Size availableSize)
     {

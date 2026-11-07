@@ -225,14 +225,24 @@ public sealed record DefinitionListBlock(ImmutableArray<DefinitionItem> Items) :
 }
 
 /// <summary>
-/// 块级 HTML 组件（白名单标签，如 <c>&lt;details&gt;</c>、<c>&lt;think&gt;</c> 或插件注册的标签），内部内容按 Markdown 解析。
+/// 块级 HTML 组件（白名单标签，如 <c>&lt;details&gt;</c>、<c>&lt;think&gt;</c> 或插件注册的标签）。
+/// 内部内容按 Markdown 解析时在 <see cref="Children"/>；组件声明为 <c>ComponentContent.Raw</c> 时原样放在 <see cref="Raw"/>，
+/// <see cref="Children"/> 为空。插件也可以自己构造它，作为自定义块的载体。
 /// </summary>
 public sealed record ComponentBlock(string Name, ComponentAttributes Attributes, ImmutableArray<MarkdownBlock> Children) : MarkdownBlock
 {
+    /// <summary>原样保留的内部文本（行之间用 <c>\n</c>）；内容按 Markdown 解析的组件为 null。</summary>
+    public string? Raw { get; init; }
+
+    /// <summary>流式中尚未出现结束标签（与 <see cref="CodeBlock.IsOpen"/> 同义）。没有结束标签就随外层块结束的组件也是 true。</summary>
+    public bool IsOpen { get; init; }
+
     internal override void AddContent(ref Fingerprint fp)
     {
         fp.Add(Name);
         Attributes.AddTo(ref fp);
+        fp.Add(Raw);
+        fp.Add(IsOpen ? 1 : 0);
         AddChildren(ref fp, Children);
     }
 }

@@ -30,7 +30,7 @@ public sealed class MarkdownProfile
     }
 
     /// <summary>默认方言：GFM、数学、脚注、提示块、自定义容器等，加上内置白名单组件。</summary>
-    public static MarkdownProfile Default { get; } = new MarkdownProfileBuilder().Build();
+    public static MarkdownProfile Default { get; } = new MarkdownProfileBuilder().BuildNew();
 
     public MarkdownPipeline Pipeline { get; }
 
@@ -45,8 +45,11 @@ public sealed class MarkdownProfile
     /// <summary>插件追加的 remend 处理器（流式尾部使用）。</summary>
     public ImmutableArray<RemendHandler> RemendHandlers { get; }
 
-    /// <summary>块级组件名（小写），切分器据此不在容器内部冻结。</summary>
+    /// <summary>内容按 Markdown 解析的块级组件名（小写），切分器据此不在容器内部冻结。</summary>
     internal ImmutableArray<string> BlockComponentNames => Table.BlockNames;
+
+    /// <summary>内容原样保留的块级组件名（小写）：切分器把它们当作不透明块，直到行尾出现结束标签。</summary>
+    internal ImmutableArray<string> RawComponentNames => Table.RawBlockNames;
 
     /// <summary>流式切分时按"容器"处理（未闭合就不冻结）的标签：块级组件与可包住 Markdown 的 HTML 容器元素。</summary>
     internal ImmutableArray<string> SegmenterContainers =>
@@ -55,6 +58,17 @@ public sealed class MarkdownProfile
             : _segmenterContainers;
 
     private ImmutableArray<string> _segmenterContainers;
+
+    /// <summary>
+    /// 找原样组件区间时按不透明容器跳过的标签：只有 HTML 容器元素（其内部是 HTML 块，解析器不会在里面开组件）。
+    /// 白名单块级组件内部按 Markdown 解析、可以嵌套原样组件，所以这里不跳过。
+    /// </summary>
+    internal ImmutableArray<string> RawScanContainers =>
+        _rawScanContainers.IsDefault
+            ? _rawScanContainers = [.. Html.HtmlElements.Containers.Where(tag => !BlockComponentNames.Contains(tag, StringComparer.OrdinalIgnoreCase) && !RawComponentNames.Contains(tag, StringComparer.OrdinalIgnoreCase))]
+            : _rawScanContainers;
+
+    private ImmutableArray<string> _rawScanContainers;
 }
 
 /// <summary>构建 <see cref="MarkdownProfile"/>。插件在这里注册语法扩展、组件与映射。</summary>
@@ -102,7 +116,18 @@ public sealed class MarkdownProfileBuilder
         return this;
     }
 
-    public MarkdownProfile Build()
+    /// <summary>
+    /// 构建方言。没有登记任何语法改动（扩展、映射、remend 处理器，组件表仍是内置表）时返回共享的
+    /// <see cref="MarkdownProfile.Default"/>：只加渲染器、不改语法的插件组合与默认方言是同一个实例，
+    /// 宿主可以按引用判断文档与服务是否匹配，也不必为每组服务各建一条 Markdig 管线。
+    /// </summary>
+    public MarkdownProfile Build() => IsUnchanged ? MarkdownProfile.Default : BuildNew();
+
+    private bool IsUnchanged =>
+        _extensions.Count == 0 && _blockMappers.Count == 0 && _inlineMappers.Count == 0 && _remendHandlers.Count == 0
+        && _components.Count == ComponentSpec.BuiltIn.Length && _components.TrueForAll(ComponentSpec.BuiltIn.Contains);
+
+    internal MarkdownProfile BuildNew()
     {
         var components = _components.ToImmutableArray();
         var builder = new MarkdownPipelineBuilder()

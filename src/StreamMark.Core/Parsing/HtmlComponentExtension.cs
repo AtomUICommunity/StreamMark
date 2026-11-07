@@ -44,6 +44,33 @@ internal sealed class HtmlComponentBlock(BlockParser parser, string name, Compon
 
     /// <summary>已关闭（Markdig 的 IsOpen 在续行判断时并不可靠，自行记录）。</summary>
     public bool IsClosedBlock { get; set; }
+
+    /// <summary>遇到了自己的结束标签（而不是随外层块或文本末尾结束）。</summary>
+    public bool SawClose { get; set; }
+}
+
+/// <summary>内部原样保留的块级组件（<see cref="ComponentContent.Raw"/>）：叶子块，各行不做块解析也不做行内解析。</summary>
+internal sealed class HtmlRawComponentBlock : LeafBlock
+{
+    public HtmlRawComponentBlock(BlockParser parser, string name, ComponentAttributes attributes) : base(parser)
+    {
+        Name = name;
+        Attributes = attributes;
+        ProcessInlines = false;
+    }
+
+    public string Name { get; }
+
+    public ComponentAttributes Attributes { get; }
+
+    /// <summary>本行内容之后即结束（结束标签与内容同在一行）。</summary>
+    public bool CloseAfterLine { get; set; }
+
+    /// <summary>遇到了自己的结束标签。</summary>
+    public bool SawClose { get; set; }
+
+    /// <summary>结束标签跟在内容后面时那一行的行号；之后 Markdig 仍可能把空行追加进来，映射时忽略。</summary>
+    public int CloseLine { get; set; } = int.MaxValue;
 }
 
 /// <summary>自闭合的行内组件。</summary>
@@ -101,6 +128,10 @@ internal sealed class HtmlComponentBlockParser : BlockParser
         {
             return BlockState.None;
         }
+        if (spec.Content == ComponentContent.Raw)
+        {
+            return OpenRaw(processor, tag, spec);
+        }
 
         var block = new HtmlComponentBlock(this, spec.Name, tag.Attributes)
         {
@@ -117,8 +148,65 @@ internal sealed class HtmlComponentBlockParser : BlockParser
         return BlockState.Continue;
     }
 
+    private BlockState OpenRaw(BlockProcessor processor, HtmlTagReader.Tag tag, ComponentSpec spec)
+    {
+        var block = new HtmlRawComponentBlock(this, spec.Name, tag.Attributes)
+        {
+            Column = processor.Column,
+            Line = processor.LineIndex,
+            Span = new SourceSpan(processor.Start, processor.Line.End),
+        };
+        for (var i = 0; i < tag.Length; i++)
+        {
+            processor.NextChar();
+        }
+        TrimTrailingRawClose(processor, block);
+        processor.NewBlocks.Push(block);
+        // 开始标签后面没有内容时不收这一行（与围栏代码块一致），内容从下一行开始
+        return processor.Line.AsSpan().IsWhiteSpace() ? BlockState.ContinueDiscard : BlockState.Continue;
+    }
+
+    private static BlockState ContinueRaw(BlockProcessor processor, HtmlRawComponentBlock raw)
+    {
+        if (raw.CloseAfterLine)
+        {
+            return BlockState.Break;
+        }
+        // Markdig 已经跳过了行首缩进：内容原样保留，退回到缩进之前（与围栏代码块相同）
+        processor.GoToColumn(processor.ColumnBeforeIndent);
+        var line = processor.Line;
+        var text = line.AsSpan().TrimStart();
+        if (HtmlTagReader.TryRead(text, out var tag) && tag.IsClosing && string.Equals(tag.Name, raw.Name, StringComparison.OrdinalIgnoreCase)
+            && text[tag.Length..].IsWhiteSpace())
+        {
+            raw.SawClose = true;
+            raw.UpdateSpanEnd(line.End);
+            return BlockState.BreakDiscard;
+        }
+        TrimTrailingRawClose(processor, raw);
+        raw.UpdateSpanEnd(line.End);
+        return BlockState.Continue;
+    }
+
+    private static void TrimTrailingRawClose(BlockProcessor processor, HtmlRawComponentBlock block)
+    {
+        var line = processor.Line.AsSpan().TrimEnd();
+        var closing = $"</{block.Name}>";
+        if (line.Length > 0 && line.EndsWith(closing, StringComparison.OrdinalIgnoreCase))
+        {
+            processor.Line.End = processor.Line.Start + line.Length - closing.Length - 1;
+            block.CloseAfterLine = true;
+            block.SawClose = true;
+            block.CloseLine = processor.LineIndex;
+        }
+    }
+
     public override BlockState TryContinue(BlockProcessor processor, Block block)
     {
+        if (block is HtmlRawComponentBlock raw)
+        {
+            return ContinueRaw(processor, raw);
+        }
         var component = (HtmlComponentBlock)block;
         if (component.CloseAfterLine)
         {
@@ -135,6 +223,7 @@ internal sealed class HtmlComponentBlockParser : BlockParser
         if (HtmlTagReader.TryRead(text, out var tag) && tag.IsClosing && string.Equals(tag.Name, component.Name, StringComparison.OrdinalIgnoreCase)
             && text[tag.Length..].IsWhiteSpace())
         {
+            component.SawClose = true;
             component.UpdateSpanEnd(line.End);
             return BlockState.BreakDiscard;
         }
@@ -152,6 +241,7 @@ internal sealed class HtmlComponentBlockParser : BlockParser
         {
             processor.Line.End = processor.Line.Start + line.Length - closing.Length - 1;
             block.CloseAfterLine = true;
+            block.SawClose = true;
         }
     }
 

@@ -180,7 +180,7 @@ public sealed class TranscriptPanel : Panel, ILogicalScrollable, ISelectionHost
         {
             if (_entries[i].Entry is MarkdownEntry { IsParsed: true } markdown)
             {
-                items.AddRange(DocumentNavigation.Outline(markdown.Document.Latest, i));
+                items.AddRange(DocumentNavigation.Outline(markdown.Document.Latest, i, MarkdownServices.GetServices(this).Registry));
             }
         }
         return items;
@@ -197,7 +197,7 @@ public sealed class TranscriptPanel : Panel, ILogicalScrollable, ISelectionHost
         {
             var state = _entries[i];
             if (state.Rows.Any(r => r.View is { } v && (ReferenceEquals(v, source) || v.IsVisualAncestorOf(source)))
-                && state.Applied is { } snapshot && DocumentNavigation.ResolveAnchor(snapshot, i, e.Url) is { } target)
+                && state.Applied is { } snapshot && DocumentNavigation.ResolveAnchor(snapshot, i, e.Url, MarkdownServices.GetServices(this).Registry) is { } target)
             {
                 ScrollToPoint(target);
                 e.Handled = true;
@@ -364,6 +364,11 @@ public sealed class TranscriptPanel : Panel, ILogicalScrollable, ISelectionHost
             || state.Context.ImageBaseUri != MarkdownServices.GetImageBaseUri(this))
         {
             var streaming = (state.Entry as MarkdownEntry)?.State;
+            if (state.Entry is MarkdownEntry markdown)
+            {
+                // 只在新建上下文时检查（不在每帧路径上），同一文档只报告一次
+                _services.CheckProfile(markdown.Document);
+            }
             state.Context = new RenderContext(_style, _services, Selection, index, streaming, state.State, MarkdownServices.GetImageBaseUri(this));
         }
         return state.Context;

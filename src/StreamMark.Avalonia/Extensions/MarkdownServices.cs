@@ -1,8 +1,13 @@
+using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using Avalonia;
 using StreamMark.Avalonia.Images;
 using StreamMark.Avalonia.Plugins;
+using StreamMark.Avalonia.Transcript;
 using StreamMark.Core.Highlighting;
+using StreamMark.Core.Pacing;
 using StreamMark.Core.Parsing;
+using StreamMark.Core.Streaming;
 
 namespace StreamMark.Avalonia.Extensions;
 
@@ -15,6 +20,9 @@ public sealed class MarkdownServices
     public static MarkdownServices Default { get; } = new();
 
     private PluginRegistry? _registry;
+    private ExceptionDispatchInfo? _registryError;
+    private readonly object _registryLock = new();
+    private readonly ConditionalWeakTable<StreamingDocument, object> _mismatchReported = new();
 
     /// <summary>插件（公式、高亮、图表、组件等）。内置组件（details、think、kbd、引用等）总是启用。</summary>
     public IReadOnlyList<IMarkdownPlugin> Plugins { get; init; } = [];
@@ -89,11 +97,79 @@ public sealed class MarkdownServices
         return Uri.TryCreate(root, url, out var resolved) ? resolved.AbsoluteUri : url;
     }
 
-    /// <summary>汇总后的插件注册表（首次访问时构建）。</summary>
-    public PluginRegistry Registry => _registry ??= new PluginRegistry(this);
+    /// <summary>
+    /// 汇总后的插件注册表（首次访问时构建，只构建一次，任意线程访问都得到同一个实例）。
+    /// 插件配置失败时抛出 <see cref="PluginConfigurationException"/>，之后每次访问都重新抛出同一个异常，不会重试。
+    /// </summary>
+    public PluginRegistry Registry
+    {
+        get
+        {
+            if (Volatile.Read(ref _registry) is { } registry)
+            {
+                return registry;
+            }
+            lock (_registryLock)
+            {
+                _registryError?.Throw();
+                if (_registry is null)
+                {
+                    try
+                    {
+                        Volatile.Write(ref _registry, new PluginRegistry(this));
+                    }
+                    catch (PluginConfigurationException e)
+                    {
+                        _registryError = ExceptionDispatchInfo.Capture(e);
+                        throw;
+                    }
+                }
+                return _registry!;
+            }
+        }
+    }
 
-    /// <summary>与插件匹配的 Markdown 方言，创建文档时传入（<c>new StreamingDocument(services.Profile)</c>）。</summary>
+    /// <summary>
+    /// 与插件匹配的 Markdown 方言。文档最好用 <see cref="CreateDocument"/> / <see cref="CreateStream"/> / <see cref="CreateEntry"/> 创建；
+    /// 自己 new 时要传入它，否则插件登记的组件标签不会被解析。插件都不改语法时它就是 <see cref="MarkdownProfile.Default"/>。
+    /// </summary>
     public MarkdownProfile Profile => Registry.Profile;
+
+    /// <summary>用这组服务的方言创建文档。</summary>
+    public StreamingDocument CreateDocument() => new(Profile);
+
+    /// <summary>用这组服务的方言创建流式回答（参数同 <see cref="MarkdownStream"/> 的构造函数）。</summary>
+    public MarkdownStream CreateStream(StreamPacerOptions? pacing = null, bool smooth = true, TimeSpan? fadeDuration = null) =>
+        new(pacing, smooth, fadeDuration, Profile);
+
+    /// <summary>用这组服务的方言创建静态会话消息（同 <see cref="MarkdownEntry.FromText"/>）。</summary>
+    public MarkdownEntry CreateEntry(string markdown, object? tag = null) => MarkdownEntry.FromText(markdown, Profile, tag);
+
+    /// <summary>用这组服务的方言创建按需解析的会话消息（同 <see cref="MarkdownEntry.FromTextDeferred"/>）。</summary>
+    public MarkdownEntry CreateDeferredEntry(string markdown, object? tag = null) => MarkdownEntry.FromTextDeferred(markdown, Profile, tag);
+
+    /// <summary>
+    /// 运行期诊断（目前是 <see cref="PluginDiagnosticKind.ProfileMismatch"/>：宿主自己创建的文档没有用这组服务的方言）。
+    /// 在界面线程触发；同一个文档只报告一次。同时写入 <see cref="System.Diagnostics.Trace"/>。
+    /// 构建期的诊断见 <see cref="PluginRegistry.Diagnostics"/>。
+    /// </summary>
+    public event Action<PluginDiagnostic>? Diagnostic;
+
+    /// <summary>文档的方言不是这组服务的方言时报告一次（视图拿到新的渲染上下文时调用，不在每帧路径上）。</summary>
+    internal void CheckProfile(StreamingDocument document)
+    {
+        if (ReferenceEquals(document.Profile, Profile) || _mismatchReported.TryGetValue(document, out _))
+        {
+            return;
+        }
+        _mismatchReported.AddOrUpdate(document, this);
+        var diagnostic = new PluginDiagnostic(PluginDiagnosticKind.ProfileMismatch,
+            "A Markdown document was created with a different MarkdownProfile than the MarkdownServices displaying it; "
+            + "plugin component tags may not be parsed. Create documents with MarkdownServices.CreateStream / CreateEntry / CreateDocument "
+            + "or pass MarkdownServices.Profile.");
+        System.Diagnostics.Trace.TraceWarning(diagnostic.Message);
+        Diagnostic?.Invoke(diagnostic);
+    }
 
     public IDiagramRenderer? FindDiagramRenderer(string? language) => Registry.FindDiagramRenderer(language);
 

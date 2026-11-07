@@ -57,6 +57,11 @@
   - **暂不支持**：`colspan`、`rowspan` 和单元格背景色；表格单元格只能放行内内容，单元格中的 `<p>` 和 `<div>` 压平为换行。
   - **作者颜色**：默认模式 `Readable` 用 WCAG 对比度（阈值 2.2）判断是否可读，比较对象是所在的 HTML 背景；没有背景时，按主题文字色推断主题背景。
   - **链接中的图片**：`[![徽章](图片)](链接)` 和 `<a><img></a>` 中，图片的占位字符也带链接区间，点击时打开链接，而不是打开图片查看器。
+- **自定义块的载体是 `ComponentBlock`（2026-11-07）**：不开放 `MarkdownBlock` 继承（`AddContent` 是 internal 指纹钩子，开放后插件漏写指纹就会让完成后的内容变化不产生 Update）。插件要新块类型时用 Markdig 扩展 + `MapBlock` 产出 `ComponentBlock`，或直接登记白名单标签。
+- **原样内容组件（2026-11-07）**：AI 对话里很多组件的内容是数据（`<tool-call>{json}</tool-call>`），按 Markdown 解析会坏。`ComponentContent.Raw` 让组件内部成为叶子块，`ComponentBlock.Raw` 保留原文，`IsOpen` 表示还没见到结束标签。两个取舍：
+  - 原样内容在 remend 之前先被等长遮盖（`DocumentComposer.MaskRawComponents`），而不是让 remend 的扫描器认识组件：remend 是移植代码（见 `Remend/DEVIATIONS.md`），遮盖只在 StreamMark 一侧、对 remend 透明。区间由切分器在一次独立扫描里给出，与冻结判断同一套规则。
+  - 不支持同名嵌套，第一个行尾结束标签即结束：数据里出现同名开始标签不该改变结构。
+- **插件视图的后台工作（2026-11-07）**：`BlockView.RunInBackground(key, work, apply)` 收拢「同 key 不重复、新 key 取消旧任务、过期结果丢弃、离开可视树取消并在挂回时重跑」；结果缓存用公开的 `BlockResultCache<TKey, TValue>`（LRU，线程安全），图表视图的缓存也换成它。图表与高亮自己的后台流程没有改写成这个辅助方法：它们各有状态显示与会话校验，改写没有收益。
 - **阶段 4（对话功能）**：
   - **链接策略**：判断在渲染层的 `TextSegmentView.LinkDecisionFor` 中进行，结果按内容缓存。被禁止的链接按 `IncompleteLink` 样式显示，也不响应点击；需要确认的链接只设置 `RequiresConfirmation`，由宿主决定如何确认。协议中夹带空白或控制字符（`java\tscript:`）的链接一律拒绝。
   - **引用卡片**：显示在 `OverlayLayer` 上，与图片查看器相同，都是自绘控件，不用 `Popup` 和主题模板；悬停 350ms 后显示，离开 200ms 内移进卡片可以保持显示。覆盖层第一次加入子控件前没有尺寸，定位时改用窗口客户区。

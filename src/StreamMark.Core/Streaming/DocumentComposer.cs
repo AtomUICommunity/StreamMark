@@ -44,7 +44,7 @@ internal sealed class DocumentComposer
         _profile = profile ?? MarkdownProfile.Default;
         var options = tailOptions ?? RemendOptions.Default;
         _tailOptions = _profile.RemendHandlers.IsEmpty ? options : options with { Handlers = [.. options.Handlers ?? [], .. _profile.RemendHandlers] };
-        _segmenter = new StreamSegmenter(_profile.SegmenterContainers);
+        _segmenter = new StreamSegmenter(_profile.SegmenterContainers, _profile.RawComponentNames);
     }
 
     public int FrozenEnd => _segmenter.FrozenEnd;
@@ -52,7 +52,7 @@ internal sealed class DocumentComposer
     public void Reset()
     {
         _frozen = new AppendOnlyList<MarkdownBlock>();
-        _segmenter = new StreamSegmenter(_profile.SegmenterContainers);
+        _segmenter = new StreamSegmenter(_profile.SegmenterContainers, _profile.RawComponentNames);
         _generation++;
     }
 
@@ -110,9 +110,55 @@ internal sealed class DocumentComposer
 
     internal ImmutableArray<MarkdownBlock> Parse(string raw, int @base, RemendOptions options)
     {
-        var healed = RemendHealer.Complete(raw, options);
+        var masked = MaskRawComponents(raw);
+        var healed = RemendHealer.Complete(masked, options);
         var document = Markdown.Parse(healed, _profile.Pipeline);
-        return MarkdigMapper.MapDocument(document, _profile, OffsetMap.Create(@base, raw, healed));
+        return MarkdigMapper.MapDocument(document, _profile, OffsetMap.Create(@base, masked, healed, raw));
+    }
+
+    /// <summary>
+    /// 把原样组件（<see cref="ComponentContent.Raw"/>）的内容换成等长的占位字符再交给 remend 与 Markdig：
+    /// 内容是数据，里面的 <c>**</c>、反引号、<c>$</c> 等不能让 remend 在文本末尾"补全"，也不能被转义。
+    /// 空白与每行开头的引用标记（<c>&gt;</c>）保持不变，所以行结构、容器结构与原文相同；
+    /// 组件的 <see cref="ComponentBlock.Raw"/> 经 <see cref="OffsetMap.SourceText"/> 从原文取，看不到占位字符。
+    /// </summary>
+    private string MaskRawComponents(string raw)
+    {
+        if (_profile.RawComponentNames.IsEmpty || !raw.Contains('<'))
+        {
+            return raw;
+        }
+        var scanner = new StreamSegmenter(_profile.RawScanContainers, _profile.RawComponentNames) { RawRegions = [] };
+        scanner.Advance(raw, 0);
+        scanner.CloseRawRegions(raw, 0);
+        var regions = scanner.RawRegions!;
+        if (regions.Count == 0)
+        {
+            return raw;
+        }
+        var chars = raw.ToCharArray();
+        for (var r = 0; r < regions.Count; r += 2)
+        {
+            var lineStart = false;
+            for (var i = regions[r]; i < regions[r + 1]; i++)
+            {
+                var c = chars[i];
+                if (c == '\n')
+                {
+                    lineStart = true;
+                }
+                else if (char.IsWhiteSpace(c) || (lineStart && c == '>'))
+                {
+                    // 行首的缩进与引用标记属于外层容器，保留
+                }
+                else
+                {
+                    chars[i] = 'x';
+                    lineStart = false;
+                }
+            }
+        }
+        return new string(chars);
     }
 
     private static Model.CodeBlock OpenCodeBlock(string text, int from, int fenceStart, int contentStart, int indent, string? info)

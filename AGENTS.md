@@ -40,9 +40,12 @@ StreamMark：面向 AI 对话场景的流式 Markdown 渲染库，Avalonia 12 / 
 - 新增白名单 HTML 组件要动四处：`ComponentSpec` 注册、解析器插入顺序（`HtmlComponentBlockParser` 必须在 `HtmlBlockParser` 之前，行内组件解析器在 `AutolinkInlineParser` 之前）、映射器、块或行内视图。未知元素整组按源码显示且绝不执行（含 `script` / `style` / `iframe`）。
 - 行内 HTML 的文字样式有两条独立实现（`MarkdigMapper` 里的标签栈与 `HtmlMapper.HtmlInlineBuilder`）；加样式必须两处都改。
 - 新增块视图：`BlockViewFactory` 的 `ViewTypeFor` / `CreateBuiltIn` / `CanReuseBuiltIn` 三个分支都要加，漏第三个会让视图在每次快照更新时被重建。片段编号必须与 `BlockText.Segments` 的收集顺序一致，否则选区与复制错位。
+- 插件的块组件视图除子块外还显示自己的文本（如属性里的标题）时，用 `AddBlockComponent(name, factory, text)` 登记复制文本（`ComponentTextCollector`），并保证片段个数与视图消耗的片段号一致。`BlockText.Segments` / `DocumentNavigation` / `SelectionRemap` 在视图侧调用时必须传当前注册表（`MarkdownServices.GetServices(this).Registry` 或 `ISelectionHost.Plugins`），漏传会让这类组件的选区、复制、搜索与跳转错位。
+- 原样组件（`ComponentSpec.Content = ComponentContent.Raw`，插件经 `BlockComponentOptions.Content` 登记）的结束规则有三处实现，必须一致：`HtmlComponentBlockParser` 的原样分支（结束标签在行尾）、`StreamSegmenter.EndsWithClosingTag`（切分器结束得不能比解析器早）、`DocumentComposer.MaskRawComponents`（解析前把内容换成等长占位，remend 才不会在里面补全或转义）。`ComponentBlock.Raw` 经 `OffsetMap.SourceText` 从原文逐行取，不要改成取修补后的文本。
+- 组件视图按 `PluginRegistry.FindBlockComponent(component)` 选择（`WhileStreaming = false` 的组件在 `IsOpen` 时是默认容器），复制文本也按它选；改其中一边必须同时改 `BlockViewFactory.Create` / `CanReuse` 与 `BlockText`。插件视图重写 `OnAttachedToVisualTree` / `OnDetachedFromVisualTree` 时必须调 base，否则 `BlockView.RunInBackground` 离开可视树时不取消、重新挂上时不重跑。
 - 新增 `Md.*` 键：`MarkdownResourceKeys` 常量 + `MarkdownStyle` 的 required 属性与解析 + `Themes/StreamMarkTheme.axaml` 的 Light/Dark 字典 + 消费点（+ 可选的 AtomUI 映射）。键名写错或别名解析失败不会报错，只会静默回落。
 - 主题里写 `MarkdownResourceAlias`，不要写画刷或 `DynamicResource`：宿主 token 在窗口 / 主题作用域，从字典位置向上查找找不到会让文字变透明。宿主主题要注册在 `StreamMarkTheme` 之后。
-- 文档必须用 `services.Profile` 创建（`MarkdownEntry.FromText(text, services.Profile)`、`new MarkdownStream(profile: …)`），否则插件注册的标签不会被解析；`MarkdownView` 上先 `SetServices` 再设 `Markdown`，反过来文档会留着旧方言。
+- 文档必须用服务的方言创建：`services.CreateStream()` / `CreateEntry(text)` / `CreateDocument()`，或手动传 `services.Profile`；否则插件注册的标签不会被解析（视图拿到新上下文时经 `MarkdownServices.CheckProfile` 报告一次 `ProfileMismatch`）。`MarkdownView` 的自建文档在服务的方言变化时按新方言重建，设置顺序无关。插件都不改语法时 `Profile` 就是 `MarkdownProfile.Default`（`MarkdownProfileBuilder.Build` 对未改动的构建返回共享实例），方言按引用比较。
 - 插件 `Configure` 只登记委托与工厂（NativeAOT，禁反射）；`PluginRegistry` 首次访问即固化，之后修改 `Plugins` 无效。同名组件后登记者覆盖先登记者是设计内行为。
 - 选区坐标只存值（`Entry` / `BlockKey` / `Segment` / `Offset`），不得持有视图引用；复制必须经 `ISelectionHost.GetSnapshot(entry)` 取模型，否则被虚拟化回收的块复制不到。
 - `TextRunCache` 是 Avalonia 不稳定 API，只在 `TextSegmentView` / `SegmentLayout` 内用 `#pragma warning disable CS0618` 限定；`InvalidateFrom` 的失效位置必须是差异点所在段落的起点，否则每次追加都会变成一次硬换行。

@@ -107,7 +107,7 @@ MarkdownServices { Plugins = [...] } → Registry（不可变）→ Profile（�
 - **模型**：`ComponentBlock(Name, Attributes, Children)`；`InlineObjectKind.Component`（自闭合）；成对组件用 `InlineSpan.ComponentIndex` 指向 `InlineContent.Components`。内置的 `kbd / sub / sup / mark / u` 直接映射为样式，`img` 映射为图片对象。
 - **内置组件**（`BuiltInComponentsPlugin`，总是启用，可被同名注册覆盖）：`<details>/<summary>`、`<think>` 折叠块，`<Citation id/>` 引用标签，`<cite href>` 引用文字。
 - **块状态**：`BlockStateStore` 每个文档一份，按 (块 key, 状态名) 保存折叠、换行、图表 / 源码切换等，视图回收或重建后保留。
-- **文档方言**：宿主创建文档时应传 `services.Profile`（`MarkdownEntry.FromText(text, profile)`、`new MarkdownStream(profile: …)`），否则插件注册的标签不会被解析。
+- **文档方言**：宿主创建文档时用 `services.CreateStream()` / `CreateEntry(text)` / `CreateDocument()`（或手动传 `services.Profile`），否则插件注册的标签不会被解析；方言不匹配时 `MarkdownServices.Diagnostic` 报告一次。`MarkdownView` 自建的文档在服务变化时自动换方言。插件配置失败抛出带插件名的 `PluginConfigurationException`，覆盖记录在 `PluginRegistry.Diagnostics`。
 
 ## 原始 HTML（阶段 3.5）
 

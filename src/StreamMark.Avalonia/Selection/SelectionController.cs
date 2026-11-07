@@ -232,7 +232,7 @@ public sealed class SelectionController
         {
             if (block.Key == point.BlockKey)
             {
-                var segments = BlockText.Segments(block);
+                var segments = BlockText.Segments(block, _host.Plugins);
                 return point.Segment >= 0 && point.Segment < segments.Count ? segments[point.Segment].Content?.Text ?? segments[point.Segment].Raw ?? "" : null;
             }
         }
@@ -294,7 +294,7 @@ public sealed class SelectionController
             }
             foreach (var block in snapshot.Blocks)
             {
-                var count = BlockText.Segments(block).Count;
+                var count = BlockText.Segments(block, _host.Plugins).Count;
                 for (var s = 0; s < count; s++)
                 {
                     var current = new TextPoint(entry, block.Key, s, 0);
@@ -359,7 +359,7 @@ public sealed class SelectionController
                     continue;
                 }
                 var lastBlock = lastSnapshot[lastSnapshot.Count - 1];
-                var segments = BlockText.Segments(lastBlock);
+                var segments = BlockText.Segments(lastBlock, _host.Plugins);
                 var end = segments.Count == 0
                     ? new TextPoint(last, lastBlock.Key, 0, 0)
                     : new TextPoint(last, lastBlock.Key, segments.Count - 1, segments[^1].Length);
@@ -401,7 +401,7 @@ public sealed class SelectionController
                 {
                     continue;
                 }
-                var segments = BlockText.Segments(block);
+                var segments = BlockText.Segments(block, _host.Plugins);
                 for (var i = 0; i < segments.Count; i++)
                 {
                     var key = new SegmentKey(entry, block.Key, i);

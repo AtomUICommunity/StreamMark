@@ -185,7 +185,8 @@ internal static class MarkdigMapper
             FootnoteGroup group => MapFootnotes(group, ctx),
             DefinitionList definitions => MapDefinitions(definitions, ctx),
             CustomContainer container => new CustomContainerBlock(container.Info, container.Arguments, MapChildren(container, ctx)),
-            HtmlComponentBlock component => new ComponentBlock(component.Name.ToLowerInvariant(), component.Attributes, MapChildren(component, ctx)),
+            HtmlComponentBlock component => new ComponentBlock(component.Name.ToLowerInvariant(), component.Attributes, MapChildren(component, ctx)) { IsOpen = !component.SawClose },
+            HtmlRawComponentBlock raw => MapRawComponent(raw, ctx),
             // 链接引用定义只影响其它块的解析结果，本身不渲染
             LinkReferenceDefinitionGroup or LinkReferenceDefinition or BlankLineBlock => null,
             ContainerBlock container => new Model.QuoteBlock(MapChildren(container, ctx)),
@@ -367,6 +368,37 @@ internal static class MarkdigMapper
             items.Add(new Model.DefinitionItem(terms.ToImmutable(), definitions.ToImmutable()));
         }
         return new DefinitionListBlock(items.ToImmutable());
+    }
+
+    /// <summary>
+    /// 原样保留的组件内容：逐行从原始源码取（不是修补后的文本），remend 插入的转义与流式尾部补全都不会出现在数据里。
+    /// 各行由 Markdig 去掉了外层容器的前缀（引用标记、列表缩进），所以按行映射而不是整段切片。
+    /// </summary>
+    private static ComponentBlock MapRawComponent(HtmlRawComponentBlock raw, MapContext ctx)
+    {
+        var lines = raw.Lines;
+        var sb = new StringBuilder();
+        for (var i = 0; i < lines.Count && lines.Lines[i].Line <= raw.CloseLine; i++)
+        {
+            if (i > 0)
+            {
+                sb.Append('\n');
+            }
+            var slice = lines.Lines[i].Slice;
+            if (ctx.Map.SourceText(slice.Start, slice.End + 1) is { } source)
+            {
+                sb.Append(source);
+            }
+            else
+            {
+                sb.Append(slice.Text, slice.Start, slice.Length);
+            }
+        }
+        return new ComponentBlock(raw.Name.ToLowerInvariant(), raw.Attributes, [])
+        {
+            Raw = sb.ToString(),
+            IsOpen = !raw.SawClose,
+        };
     }
 
     private static string LinesToString(LeafBlock block)

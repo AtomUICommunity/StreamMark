@@ -10,7 +10,7 @@ namespace StreamMark.Avalonia.Selection;
 /// </summary>
 internal static class SelectionRemap
 {
-    public static TextPoint Map(SnapshotEdit edit, TextPoint point)
+    public static TextPoint Map(SnapshotEdit edit, TextPoint point, Plugins.PluginRegistry? plugins = null)
     {
         if (edit.FindMove(point.BlockKey) is not { } move)
         {
@@ -22,15 +22,15 @@ internal static class SelectionRemap
             case BlockFate.Shifted:
                 return point with { BlockKey = move.New!.Key };
             case BlockFate.Replaced:
-                return Clamp(point with { BlockKey = move.New!.Key }, move.New);
+                return Clamp(point with { BlockKey = move.New!.Key }, move.New, plugins);
             default:
-                return move.New is { } next ? new TextPoint(point.Entry, next.Key, 0, 0) : EndOfDocument(edit, point.Entry);
+                return move.New is { } next ? new TextPoint(point.Entry, next.Key, 0, 0) : EndOfDocument(edit, point.Entry, plugins);
         }
     }
 
-    private static TextPoint Clamp(TextPoint point, Core.Model.MarkdownBlock block)
+    private static TextPoint Clamp(TextPoint point, Core.Model.MarkdownBlock block, Plugins.PluginRegistry? plugins)
     {
-        var segments = BlockText.Segments(block);
+        var segments = BlockText.Segments(block, plugins);
         if (segments.Count == 0)
         {
             return point with { Segment = 0, Offset = 0 };
@@ -42,14 +42,14 @@ internal static class SelectionRemap
         return point.Segment < 0 ? point : point with { Offset = Math.Clamp(point.Offset, 0, segments[point.Segment].Length) };
     }
 
-    private static TextPoint EndOfDocument(SnapshotEdit edit, int entry)
+    private static TextPoint EndOfDocument(SnapshotEdit edit, int entry, Plugins.PluginRegistry? plugins)
     {
         if (edit.Next.Count == 0)
         {
             return new TextPoint(entry, 0, 0, 0);
         }
         var last = edit.Next[^1];
-        var segments = BlockText.Segments(last);
+        var segments = BlockText.Segments(last, plugins);
         return segments.Count == 0 ? new TextPoint(entry, last.Key, 0, 0) : new TextPoint(entry, last.Key, segments.Count - 1, segments[^1].Length);
     }
 }

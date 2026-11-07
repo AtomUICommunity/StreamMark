@@ -1,3 +1,5 @@
+using StreamMark.Core.Parsing;
+
 namespace StreamMark.Core.Streaming;
 
 /// <summary>
@@ -21,18 +23,26 @@ internal sealed class StreamSegmenter
         Raw,
         /// <summary>白名单块级组件（如 &lt;details&gt;），内部可含空行，带嵌套深度。</summary>
         Container,
+        /// <summary>内容原样保留的块级组件：到行尾是结束标签的那一行为止（与解析器同一规则），不计嵌套。</summary>
+        RawComponent,
     }
 
     private readonly string[] _containerTags;
+    private readonly string[] _rawComponentTags;
     private int _containerDepth;
 
     public StreamSegmenter() : this([])
     {
     }
 
-    public StreamSegmenter(IEnumerable<string> containerTags)
+    public StreamSegmenter(IEnumerable<string> containerTags) : this(containerTags, [])
+    {
+    }
+
+    public StreamSegmenter(IEnumerable<string> containerTags, IEnumerable<string> rawComponentTags)
     {
         _containerTags = [.. containerTags];
+        _rawComponentTags = [.. rawComponentTags];
     }
 
     // 已冻结的边界（绝对偏移）
@@ -61,6 +71,39 @@ internal sealed class StreamSegmenter
     private bool _mathTopLevel;
     private HtmlKind _html;
     private string? _htmlRawTag;
+    private int _rawRegionStart = -1;
+
+    /// <summary>
+    /// 不为 null 时记录原样组件的内容区间（绝对偏移，成对：起点、终点；不含开始 / 结束标签）。
+    /// 只用于解析前的遮盖（<see cref="DocumentComposer"/>），冻结判断不需要它。
+    /// </summary>
+    internal List<int>? RawRegions { get; init; }
+
+    /// <summary>扫描到文本末尾后收尾：仍开着的原样组件延伸到末尾，或止于尚未结束的最后一行里的结束标签。</summary>
+    internal void CloseRawRegions(ReadOnlySpan<char> text, int textStart)
+    {
+        if (RawRegions is null || _rawRegionStart < 0)
+        {
+            return;
+        }
+        var end = textStart + text.Length;
+        var partial = text[Math.Min(_scanPos - textStart, text.Length)..].TrimEnd();
+        if (!partial.IsEmpty && EndsWithClosingTag(partial))
+        {
+            end = _scanPos + partial.Length - (_htmlRawTag!.Length + 3);
+        }
+        AddRawRegion(_rawRegionStart, end);
+        _rawRegionStart = -1;
+    }
+
+    private void AddRawRegion(int start, int end)
+    {
+        if (end > start)
+        {
+            RawRegions!.Add(start);
+            RawRegions.Add(end);
+        }
+    }
 
     /// <summary>
     /// 处理新文本。<paramref name="text"/> 覆盖源码区间 [<paramref name="textStart"/>, 源码末尾)，
@@ -161,6 +204,11 @@ internal sealed class StreamSegmenter
         {
             if (EndsHtmlBlock(line))
             {
+                if (_html == HtmlKind.RawComponent && _rawRegionStart >= 0)
+                {
+                    AddRawRegion(_rawRegionStart, lineStart + line.TrimEnd().Length - (_htmlRawTag!.Length + 3));
+                    _rawRegionStart = -1;
+                }
                 _html = HtmlKind.None;
                 _htmlRawTag = null;
             }
@@ -237,6 +285,16 @@ internal sealed class StreamSegmenter
 
         if (indent <= 3 && TryOpenHtmlBlock(content))
         {
+            // 原样组件的内容从开始标签之后算起；标签读不完整时解析器也不会把它当组件，不记录
+            if (_html == HtmlKind.RawComponent && RawRegions is not null && HtmlTagReader.TryRead(content, out var tag) && !tag.IsClosing)
+            {
+                _rawRegionStart = lineStart + (line.Length - content.Length) + tag.Length;
+                if (EndsHtmlBlock(content[1..]))
+                {
+                    AddRawRegion(_rawRegionStart, lineStart + line.TrimEnd().Length - (_htmlRawTag!.Length + 3));
+                    _rawRegionStart = -1;
+                }
+            }
             if (EndsHtmlBlock(content[1..]))
             {
                 _html = HtmlKind.None;
@@ -405,6 +463,19 @@ internal sealed class StreamSegmenter
             _html = HtmlKind.Declaration;
             return true;
         }
+        foreach (var tag in _rawComponentTags)
+        {
+            if (content.Length > tag.Length && content[1..].StartsWith(tag, StringComparison.OrdinalIgnoreCase))
+            {
+                var after = content.Length > tag.Length + 1 ? content[tag.Length + 1] : ' ';
+                if (after is ' ' or '\t' or '>' or '/')
+                {
+                    _html = HtmlKind.RawComponent;
+                    _htmlRawTag = tag;
+                    return true;
+                }
+            }
+        }
         foreach (var tag in _containerTags)
         {
             if (content.Length > tag.Length && content[1..].StartsWith(tag, StringComparison.OrdinalIgnoreCase))
@@ -445,8 +516,16 @@ internal sealed class StreamSegmenter
         HtmlKind.CData => line.Contains("]]>", StringComparison.Ordinal),
         HtmlKind.Raw => line.Contains("</" + _htmlRawTag, StringComparison.OrdinalIgnoreCase),
         HtmlKind.Container => ContainerEnds(line),
+        HtmlKind.RawComponent => EndsWithClosingTag(line.TrimEnd()),
         _ => true,
     };
+
+    // 解析器只认行尾的结束标签（独占一行或跟在内容后）：切分器结束得不能比解析器早，否则会在仍开着的组件里冻结
+    private bool EndsWithClosingTag(ReadOnlySpan<char> line) =>
+        line.Length >= _htmlRawTag!.Length + 3
+        && line[^1] == '>'
+        && line[..^1].EndsWith(_htmlRawTag, StringComparison.OrdinalIgnoreCase)
+        && line[..^(_htmlRawTag.Length + 1)].EndsWith("</", StringComparison.Ordinal);
 
     // 统计同名开 / 闭标签（不含行首的开始标签之前的状态），深度回到 0 以下时容器结束
     private bool ContainerEnds(ReadOnlySpan<char> line)

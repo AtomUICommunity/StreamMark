@@ -10,7 +10,7 @@ public static class BlockViewFactory
         // 插件优先：块组件视图、按语言替换的代码围栏视图
         if (block is ComponentBlock component)
         {
-            return context.Plugins.TryGetBlockComponent(component.Name, out var factory) ? factory(component) : new Plugins.ComponentContainerView();
+            return context.Plugins.FindBlockComponent(component) is { } registration ? registration.Factory(component) : new Plugins.ComponentContainerView();
         }
         if (block is CodeBlock code && context.Plugins.FindFenceView(code) is { } fence)
         {
@@ -40,9 +40,11 @@ public static class BlockViewFactory
     public static bool CanReuse(BlockView view, MarkdownBlock block, RenderContext context)
     {
         // 组件与插件围栏视图：同名 / 同语言、且视图类型与新建的一致时复用
+        // （闭合后才替换的组件在闭合那一刻从默认容器换成插件视图）
         if (block is ComponentBlock component)
         {
-            return view.Block is ComponentBlock old && string.Equals(old.Name, component.Name, StringComparison.OrdinalIgnoreCase);
+            return view.Block is ComponentBlock old && string.Equals(old.Name, component.Name, StringComparison.OrdinalIgnoreCase)
+                && ReferenceEquals(context.Plugins.FindBlockComponent(old), context.Plugins.FindBlockComponent(component));
         }
         var fence = block is CodeBlock code ? context.Plugins.FindFenceView(code) : null;
         var oldFence = view.Block is CodeBlock oldCode ? context.Plugins.FindFenceView(oldCode) : null;

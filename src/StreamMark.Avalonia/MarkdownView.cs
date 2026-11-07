@@ -51,7 +51,7 @@ public class MarkdownView : Control, ISelectionHost
         DocumentProperty.Changed.AddClassHandler<MarkdownView>((view, _) => view.OnSourceChanged());
         StreamProperty.Changed.AddClassHandler<MarkdownView>((view, _) => view.OnSourceChanged());
         IsTaskInteractionEnabledProperty.Changed.AddClassHandler<MarkdownView>((view, _) => view.InvalidateContext());
-        MarkdownServices.ServicesProperty.Changed.AddClassHandler<MarkdownView>((view, _) => view.InvalidateContext());
+        MarkdownServices.ServicesProperty.Changed.AddClassHandler<MarkdownView>((view, _) => view.OnServicesChanged());
         MarkdownServices.ImageBaseUriProperty.Changed.AddClassHandler<MarkdownView>((view, _) => view.InvalidateContext());
     }
 
@@ -286,8 +286,9 @@ public class MarkdownView : Control, ISelectionHost
         {
             return;
         }
-        var mappedAnchor = SelectionRemap.Map(edit, anchor);
-        var mappedActive = SelectionRemap.Map(edit, active);
+        var plugins = MarkdownServices.GetServices(this).Registry;
+        var mappedAnchor = SelectionRemap.Map(edit, anchor, plugins);
+        var mappedActive = SelectionRemap.Map(edit, active, plugins);
         if (anchor == active)
         {
             Selection.Set(mappedAnchor, mappedAnchor);
@@ -330,11 +331,37 @@ public class MarkdownView : Control, ISelectionHost
         LayoutUpdated -= OnLayoutUpdatedForAnchor;
     }
 
-    private RenderContext CreateContext() =>
-        new(MarkdownStyle.Resolve(this), MarkdownServices.GetServices(this), Selection, 0, Stream?.State, _state, MarkdownServices.GetImageBaseUri(this))
+    private RenderContext CreateContext()
+    {
+        var services = MarkdownServices.GetServices(this);
+        if (_ownDocument is null && EffectiveDocument is { } hosted)
+        {
+            // 宿主自己创建的文档不能替它重建，只报告一次方言不匹配
+            services.CheckProfile(hosted);
+        }
+        return new(MarkdownStyle.Resolve(this), services, Selection, 0, Stream?.State, _state, MarkdownServices.GetImageBaseUri(this))
         {
             TaskToggle = IsTaskInteractionEnabled ? RequestTaskToggle : null,
         };
+    }
+
+    // 服务变了（包括挂到设置了服务的祖先下）：自建文档的方言跟着换。同一段文本按新方言重新解析，DocumentId 不变；
+    // 块的结构可能随方言变化，所以视图、块状态与选区都重建。插件都不改语法时方言是同一个实例，不会重新解析。
+    private void OnServicesChanged()
+    {
+        if (_ownDocument is not null && Stream is null && Document is null
+            && MarkdownServices.GetServices(this).Profile is var profile && !ReferenceEquals(_ownDocument.Profile, profile))
+        {
+            _ownDocument = new StreamingDocument(profile);
+            _ownDocument.Load(Markdown ?? "");
+            _refreshVersion = 0;
+            Subscribe();
+            _presenter.Clear();
+            _state.Clear();
+            Selection.Clear();
+        }
+        InvalidateContext();
+    }
 
     // 只在快照完整时发请求：流式中源码还会变，点击的标记位置可能马上失效
     private bool RequestTaskToggle(Core.Model.ListItemBlock item)
@@ -385,7 +412,7 @@ public class MarkdownView : Control, ISelectionHost
     private SearchModel? _search;
 
     /// <summary>文档的目录（标题，按阅读顺序）。</summary>
-    public List<OutlineItem> GetOutline() => _presenter.Applied is { } snapshot ? DocumentNavigation.Outline(snapshot, 0) : [];
+    public List<OutlineItem> GetOutline() => _presenter.Applied is { } snapshot ? DocumentNavigation.Outline(snapshot, 0, MarkdownServices.GetServices(this).Registry) : [];
 
     /// <summary>让选区坐标所在位置进入可视区域（由外层滚动容器滚动，例如 <see cref="ScrollViewer"/>）。找不到目标时返回 false。</summary>
     public bool ScrollToPoint(TextPoint point)
@@ -427,7 +454,7 @@ public class MarkdownView : Control, ISelectionHost
         {
             return new SourceNavigationResult(SourceNavigationStatus.NoDocument);
         }
-        if (DocumentNavigation.ResolveSourceOffset(snapshot, 0, offset) is not { } target)
+        if (DocumentNavigation.ResolveSourceOffset(snapshot, 0, offset, MarkdownServices.GetServices(this).Registry) is not { } target)
         {
             return new SourceNavigationResult(SourceNavigationStatus.OutOfRange);
         }
@@ -441,14 +468,14 @@ public class MarkdownView : Control, ISelectionHost
 
     /// <summary>渲染位置 → 源码区间，块级精度：返回承载该文本片段的最深的块的完整区间。快照没有对应的块时返回 null。</summary>
     public SourceRange? GetSourceRange(TextPoint point) =>
-        _presenter.Applied is { } snapshot ? DocumentNavigation.SourceRangeOf(snapshot, point) : null;
+        _presenter.Applied is { } snapshot ? DocumentNavigation.SourceRangeOf(snapshot, point, MarkdownServices.GetServices(this).Registry) : null;
 
     /// <summary>当前选区覆盖的源码区间（两端各扩展到完整的块）；没有选区时返回 null。</summary>
     public SourceRange? GetSelectionSourceRange()
     {
         if (Selection.Range is not { } range || _presenter.Applied is not { } snapshot
-            || DocumentNavigation.SourceRangeOf(snapshot, range.Start) is not { } first
-            || DocumentNavigation.SourceRangeOf(snapshot, range.End) is not { } last)
+            || DocumentNavigation.SourceRangeOf(snapshot, range.Start, MarkdownServices.GetServices(this).Registry) is not { } first
+            || DocumentNavigation.SourceRangeOf(snapshot, range.End, MarkdownServices.GetServices(this).Registry) is not { } last)
         {
             return null;
         }
@@ -534,7 +561,7 @@ public class MarkdownView : Control, ISelectionHost
     // 文内锚点（#标题、#fn:脚注）在文档内跳转，找不到时交给宿主
     private void OnAnchorLinkClicked(object? sender, LinkClickedEventArgs e)
     {
-        if (e.Url.StartsWith('#') && _presenter.Applied is { } snapshot && DocumentNavigation.ResolveAnchor(snapshot, 0, e.Url) is { } target)
+        if (e.Url.StartsWith('#') && _presenter.Applied is { } snapshot && DocumentNavigation.ResolveAnchor(snapshot, 0, e.Url, MarkdownServices.GetServices(this).Registry) is { } target)
         {
             ScrollToPoint(target);
             e.Handled = true;

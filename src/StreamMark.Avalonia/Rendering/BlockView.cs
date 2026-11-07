@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Threading;
 using StreamMark.Avalonia.Selection;
 using StreamMark.Core.Model;
 
@@ -54,6 +55,105 @@ public abstract class BlockView : Control
     {
         LogicalChildren.Remove(child);
         VisualChildren.Remove(child);
+    }
+
+    private BackgroundJob? _job;
+
+    /// <summary>
+    /// 在后台执行慢工作（渲染、解析数据等），结果回到界面线程交给 <paramref name="apply"/>。
+    /// <list type="bullet">
+    /// <item>同一 <paramref name="key"/> 正在执行或已经应用过：什么都不做（流式中内容没变的块每帧调用也没有开销）。</item>
+    /// <item>新的 key：取消上一个任务，过期的结果不会再应用。</item>
+    /// <item>视图离开可视树时取消未完成的任务，重新挂上时自动按最后一次请求重跑。</item>
+    /// <item>工作抛出的异常（取消除外）交给 <paramref name="failed"/>；不传时丢弃。</item>
+    /// </list>
+    /// key 通常取 <see cref="MarkdownBlock.ComputeFingerprint"/>（加上影响结果的环境）。指纹每次调用都会重新计算，
+    /// 只在 <c>OnUpdate</c> 的 previous 与 block 不是同一实例时再算，流式中没变的块就不付这个成本。
+    /// 只能在界面线程调用。
+    /// </summary>
+    protected void RunInBackground<T>(ulong key, Func<CancellationToken, Task<T>> work, Action<T> apply, Action<Exception>? failed = null)
+    {
+        if (_job is { Abandoned: false } current && current.Key == key)
+        {
+            return;
+        }
+        _job?.Cancellation.Cancel();
+        var job = new BackgroundJob(key, () => RunInBackground(key, work, apply, failed));
+        _job = job;
+        var token = job.Cancellation.Token;
+        _ = Task.Run(async () =>
+        {
+            T result;
+            try
+            {
+                result = await work(token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception e)
+            {
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (ReferenceEquals(_job, job) && !token.IsCancellationRequested)
+                    {
+                        job.Completed = true;
+                        failed?.Invoke(e);
+                    }
+                });
+                return;
+            }
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (ReferenceEquals(_job, job) && !token.IsCancellationRequested)
+                {
+                    job.Completed = true;
+                    apply(result);
+                }
+            });
+        }, CancellationToken.None);
+    }
+
+    /// <summary>取消 <see cref="RunInBackground"/> 启动的任务；之后用任何 key 调用都会重新执行。</summary>
+    protected void CancelBackgroundWork()
+    {
+        _job?.Cancellation.Cancel();
+        _job = null;
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        if (_job is { Completed: false, Abandoned: false } job)
+        {
+            job.Cancellation.Cancel();
+            job.Abandoned = true;
+        }
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        if (_job is { Abandoned: true } job)
+        {
+            _job = null;
+            job.Restart();
+        }
+    }
+
+    private sealed class BackgroundJob(ulong key, Action restart)
+    {
+        public ulong Key { get; } = key;
+
+        public Action Restart { get; } = restart;
+
+        public CancellationTokenSource Cancellation { get; } = new();
+
+        public bool Completed { get; set; }
+
+        /// <summary>离开可视树时被取消，等重新挂上时重跑。</summary>
+        public bool Abandoned { get; set; }
     }
 }
 

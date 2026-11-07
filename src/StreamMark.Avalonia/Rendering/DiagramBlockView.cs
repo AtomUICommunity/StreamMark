@@ -34,6 +34,7 @@ public sealed class DiagramBlockView : BlockView
     private readonly IconButton _copy = new() { Icon = MarkdownIcons.Copy };
     private readonly IconButton _fullscreen = new() { Icon = MarkdownIcons.Expand };
     private readonly CodeTextView _code = new();
+    private readonly BlockActionBar _actions;
     private DiagramResult? _diagram;
     private string? _error;
     private bool _showCode;
@@ -51,6 +52,7 @@ public sealed class DiagramBlockView : BlockView
         AddChild(_toggle);
         AddChild(_copy);
         AddChild(_fullscreen);
+        _actions = new BlockActionBar(this, AddChild, RemoveChild);
         _fullscreen.Click += (_, _) => OpenFullscreen();
         _toggle.Click += (_, _) =>
         {
@@ -83,6 +85,10 @@ public sealed class DiagramBlockView : BlockView
             button.HoverBackground = style.HoverBackground;
         }
         _title = new TextLayout(code.Language ?? "diagram", new Typeface(style.MonospaceFontFamily), style.CodeFontSize * 0.92, style.SecondaryForeground);
+        if (contextChanged || previous is not CodeBlock old || old.Info != code.Info)
+        {
+            _actions.Rebuild(context, Plugins.BlockActionTargets.Diagram, code, visible: true);
+        }
 
         Refresh(context, code);
     }
@@ -234,7 +240,7 @@ public sealed class DiagramBlockView : BlockView
             {
                 if (result is not null)
                 {
-                    DiagramCache.Add(key, result);
+                    DiagramCache.Set(key, result);
                 }
                 if (token.IsCancellationRequested || key != _renderKey)
                 {
@@ -287,6 +293,10 @@ public sealed class DiagramBlockView : BlockView
         _toggle.Measure(Size.Infinity);
         _copy.Measure(Size.Infinity);
         _fullscreen.Measure(Size.Infinity);
+        foreach (var button in _actions.Buttons)
+        {
+            button.Measure(Size.Infinity);
+        }
         var inner = Math.Max(0, availableSize.Width - Padding * 2);
         var width = double.IsFinite(availableSize.Width) ? availableSize.Width : 600;
         if (DiagramVisible)
@@ -319,7 +329,7 @@ public sealed class DiagramBlockView : BlockView
     protected override Size ArrangeOverride(Size finalSize)
     {
         var x = finalSize.Width - 6;
-        foreach (var button in new[] { _copy, _toggle, _fullscreen })
+        foreach (var button in new[] { _copy, _toggle, _fullscreen }.Concat(_actions.Buttons))
         {
             if (!button.IsVisible)
             {
@@ -368,36 +378,6 @@ public sealed class DiagramBlockView : BlockView
         }
     }
 
-    private static class DiagramCache
-    {
-        private const int Capacity = 32;
-        private static readonly Dictionary<string, DiagramResult> Items = [];
-        private static readonly LinkedList<string> Order = new();
-
-        public static bool TryGet(string key, out DiagramResult? result)
-        {
-            if (Items.TryGetValue(key, out var found))
-            {
-                result = found;
-                return true;
-            }
-            result = null;
-            return false;
-        }
-
-        public static void Add(string key, DiagramResult result)
-        {
-            if (Items.ContainsKey(key))
-            {
-                return;
-            }
-            Items[key] = result;
-            Order.AddLast(key);
-            while (Order.Count > Capacity)
-            {
-                Items.Remove(Order.First!.Value);
-                Order.RemoveFirst();
-            }
-        }
-    }
+    // 进程内共享：同样的代码与环境不必重新渲染（视图回收、重建后立即显示）
+    private static readonly BlockResultCache<string, DiagramResult> DiagramCache = new(32);
 }

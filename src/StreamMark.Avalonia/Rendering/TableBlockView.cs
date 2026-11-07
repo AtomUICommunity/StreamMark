@@ -27,6 +27,7 @@ public sealed class TableBlockView : BlockView
     private readonly List<List<TextSegmentView>> _cells = [];
     private readonly IconButton _copy = new() { Icon = MarkdownIcons.Copy, IsVisible = false };
     private readonly IconButton _fullscreen = new() { Icon = MarkdownIcons.Expand, IsVisible = false };
+    private readonly BlockActionBar _actions;
     private double[] _columnWidths = [];
     private double[] _rowHeights = [];
     private double _offsetX;
@@ -39,6 +40,7 @@ public sealed class TableBlockView : BlockView
         ClipToBounds = true;
         AddChild(_copy);
         AddChild(_fullscreen);
+        _actions = new BlockActionBar(this, AddChild, RemoveChild);
         global::Avalonia.Automation.AutomationProperties.SetName(_copy, "Copy");
         global::Avalonia.Automation.AutomationProperties.SetName(_fullscreen, "Fullscreen");
         _fullscreen.Click += (_, _) => OpenFullscreen();
@@ -58,6 +60,11 @@ public sealed class TableBlockView : BlockView
         _copy.HoverBackground = context.Style.HoverBackground;
         _fullscreen.Foreground = context.Style.SecondaryForeground;
         _fullscreen.HoverBackground = context.Style.HoverBackground;
+        if (contextChanged || previous is null)
+        {
+            // 插件操作与复制 / 全屏一样只在悬停时显示
+            _actions.Rebuild(context, Plugins.BlockActionTargets.Table, table, _copy.IsVisible);
+        }
         for (var r = 0; r < table.Rows.Length; r++)
         {
             if (r >= _cells.Count)
@@ -104,10 +111,12 @@ public sealed class TableBlockView : BlockView
     private void BringActionsToFront()
     {
         var count = VisualChildren.Count;
-        if (count >= 2 && ReferenceEquals(VisualChildren[count - 2], _fullscreen) && ReferenceEquals(VisualChildren[count - 1], _copy))
+        if (count >= 2 && ReferenceEquals(VisualChildren[count - 2], _fullscreen) && ReferenceEquals(VisualChildren[count - 1], _copy)
+            && (_actions.Buttons.Count == 0 || count >= 3 && ReferenceEquals(VisualChildren[count - 3], _actions.Buttons[^1])))
         {
             return;
         }
+        _actions.BringToFront();
         RemoveChild(_fullscreen);
         RemoveChild(_copy);
         AddChild(_fullscreen);
@@ -156,6 +165,10 @@ public sealed class TableBlockView : BlockView
         }
         _copy.Measure(Size.Infinity);
         _fullscreen.Measure(Size.Infinity);
+        foreach (var button in _actions.Buttons)
+        {
+            button.Measure(Size.Infinity);
+        }
         _offsetX = Math.Clamp(_offsetX, 0, Math.Max(0, _contentWidth - available));
         return new Size(Math.Min(_contentWidth, available) + 1, _rowHeights.Sum() + 1 + ActionBarHeight);
     }
@@ -184,6 +197,13 @@ public sealed class TableBlockView : BlockView
         var buttonY = Math.Max(0, ActionBarHeight - _copy.DesiredSize.Height);
         _copy.Arrange(new Rect(visibleRight - _copy.DesiredSize.Width - 3, buttonY, _copy.DesiredSize.Width, _copy.DesiredSize.Height));
         _fullscreen.Arrange(new Rect(visibleRight - _copy.DesiredSize.Width - _fullscreen.DesiredSize.Width - 5, buttonY, _fullscreen.DesiredSize.Width, _fullscreen.DesiredSize.Height));
+        // 插件操作排在复制（及可见时的全屏）左边
+        var actionX = visibleRight - _copy.DesiredSize.Width - 3 - (_fullscreen.IsVisible ? _fullscreen.DesiredSize.Width + 2 : 0);
+        foreach (var button in _actions.Buttons)
+        {
+            actionX -= button.DesiredSize.Width + 2;
+            button.Arrange(new Rect(actionX, buttonY, button.DesiredSize.Width, button.DesiredSize.Height));
+        }
         return finalSize;
     }
 
@@ -235,6 +255,8 @@ public sealed class TableBlockView : BlockView
         _copy.IsVisible = true;
         // 表格放不下（需要横向滚动）或较大时才提供全屏
         _fullscreen.IsVisible = !IsInOverlay && (_contentWidth > Bounds.Width + 1 || _rowHeights.Length > 8);
+        _actions.SetVisible(true);
+        InvalidateArrange();
     }
 
     protected override void OnPointerExited(PointerEventArgs e)
@@ -242,6 +264,7 @@ public sealed class TableBlockView : BlockView
         base.OnPointerExited(e);
         _copy.IsVisible = false;
         _fullscreen.IsVisible = false;
+        _actions.SetVisible(false);
     }
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)

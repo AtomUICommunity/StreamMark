@@ -46,7 +46,7 @@ public sealed class SearchModel
                 }
                 foreach (var block in snapshot.Blocks)
                 {
-                    var segments = BlockText.Segments(block);
+                    var segments = BlockText.Segments(block, _host.Plugins);
                     for (var s = 0; s < segments.Count; s++)
                     {
                         var text = segments[s].Content?.Text ?? segments[s].Raw ?? "";

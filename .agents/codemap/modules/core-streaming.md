@@ -73,6 +73,7 @@ updated: 2026-10-16
 
 ## How to extend
 - To add 冻结边界规则（例如新容器语法）：改 `StreamSegmenter` 的 `InOpaqueBlock` / `ProcessLine` / `AnalyzeLine`（`src/StreamMark.Core/Streaming/StreamSegmenter.cs:128`、`:130`、`:192`），再在 `docs/streaming-rules.md:3` 更新规则清单，最后在 `tests/StreamMark.Core.Tests/Streaming/SegmenterTests.cs` 加一条"不能过早冻结"的用例。**漏掉"不冻结"的守卫 → 冻结片段与整篇解析不再一致，`StreamingEquivalenceTests` 的 `AssertSameBlocks` 报块类型 / range / 指纹不符**（`tests/StreamMark.Core.Tests/Streaming/StreamingEquivalenceTests.cs:105`）。
+- 原样组件：切分器有单独的 `HtmlKind.RawComponent`，只有以 `</name>` 结尾的行才结束（`StreamSegmenter.EndsWithClosingTag`，结束不能早于解析器）；设置 `RawRegions` 时还记录内容区间。`DocumentComposer.Parse` 先用一个独立的切分器扫描（容器表是 `MarkdownProfile.RawScanContainers`：只跳过 HTML 容器，白名单组件内部照样找）得到区间，`MaskRawComponents` 把区间内非空白字符换成 `x`（行首 `>` 保留）后再交给 remend / Markdig，`OffsetMap.Create(base, masked, healed, raw)` 让 `SourceText` 从未遮盖的原文取字。三处规则要一起改。
 - To 让某个标签按"容器"处理（内部可含空行不冻结）：不是改切分器，而是让插件把它注册为组件，或加进 `Html.HtmlElements.Containers` — `src/StreamMark.Core/Parsing/MarkdownProfile.cs:52`、`:54`；漏掉这一步 → `<details>` 之类容器里的空行会被当成可切点，容器被拆成两半。
 - To 加节奏预设：在 `PacingPreset` 与 `StreamPacerOptions.TargetLag` 的 switch 各加一项（`src/StreamMark.Core/Pacing/StreamPacer.cs:7`、`:43`），再补 `tests/StreamMark.Core.Tests/Pacing/StreamPacerTests.cs` 的节奏断言。只加枚举不改 `TargetLag` → 新预设落进 `_ =>` 分支，静默等同 `Balanced`。
 - To 让流式代码块尾部走别的路径：`DocumentComposer.Update` 的 `TryGetOpenFence` 分支（`src/StreamMark.Core/Streaming/DocumentComposer.cs:81`）是唯一入口；对应探针是 `StreamSegmenter.TryGetOpenFence`（`:111`）。漏掉 `_fenceStartsRun` 条件 → 围栏出现在段落中间（如引用块之后）时也会命中快速路径，`IsOpen` 与解析路径不一致。

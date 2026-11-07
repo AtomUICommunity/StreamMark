@@ -13,9 +13,25 @@ public enum ComponentKind : byte
     SelfClosing,
 }
 
+/// <summary>块级组件内部内容的处理方式。</summary>
+public enum ComponentContent : byte
+{
+    /// <summary>内部按 Markdown 解析，结果在 <see cref="ComponentBlock.Children"/>。</summary>
+    Markdown,
+
+    /// <summary>
+    /// 内部原样保留（数据而非 Markdown，例如 <c>&lt;tool-call&gt;{json}&lt;/tool-call&gt;</c>），结果在 <see cref="ComponentBlock.Raw"/>。
+    /// 遇到第一个结束标签即结束（不支持同名嵌套）；结束标签须在行尾（独占一行，或跟在内容后面）。
+    /// </summary>
+    Raw,
+}
+
 /// <summary>白名单 HTML 组件的声明。标签名不区分大小写。</summary>
 public sealed record ComponentSpec(string Name, ComponentKind Kind)
 {
+    /// <summary>块级组件内部内容的处理方式（只对 <see cref="ComponentKind.Block"/> 有效）。</summary>
+    public ComponentContent Content { get; init; } = ComponentContent.Markdown;
+
     /// <summary>内置组件：折叠块、推理块、按键 / 上下标 / 高亮 / 下划线、引用、图片。</summary>
     public static ImmutableArray<ComponentSpec> BuiltIn { get; } =
     [
@@ -55,10 +71,15 @@ internal sealed class ComponentTable
         {
             _specs[spec.Name] = spec;
         }
-        BlockNames = [.. _specs.Values.Where(s => s.Kind == ComponentKind.Block).Select(s => s.Name.ToLowerInvariant())];
+        BlockNames = [.. _specs.Values.Where(s => s.Kind == ComponentKind.Block && s.Content == ComponentContent.Markdown).Select(s => s.Name.ToLowerInvariant())];
+        RawBlockNames = [.. _specs.Values.Where(s => s.Kind == ComponentKind.Block && s.Content == ComponentContent.Raw).Select(s => s.Name.ToLowerInvariant())];
     }
 
+    /// <summary>内部按 Markdown 解析的块级组件名（小写）。</summary>
     public ImmutableArray<string> BlockNames { get; }
+
+    /// <summary>内部原样保留的块级组件名（小写）。</summary>
+    public ImmutableArray<string> RawBlockNames { get; }
 
     public bool TryGet(ReadOnlySpan<char> name, out ComponentSpec spec)
     {
