@@ -20,7 +20,7 @@ StreamMark：面向 AI 对话场景的流式 Markdown 渲染库，Avalonia 12 / 
 | AOT 冒烟（CI 门禁的等价命令） | `dotnet publish samples/StreamMark.Gallery -c Release -r <rid>`，要求 publish 日志里 0 个 `warning IL####`；再把 `artifacts/native/<rid>/` 的文件复制到发布输出旁，运行 `StreamMark.Gallery --smoke` | 缺原生库时会在 `ratex.*` 检查失败；`--smoke` 的退出码即结论（0 = 全部通过） |
 | 打包本地 NuGet | `tools/pack-local.sh <version>` | 产出 `artifacts/packages/*.nupkg`；重新打包必须升版本号 |
 | 基准 | `dotnet run -c Release --project bench/StreamMark.Benchmarks -- --filter '*'` | ShortRun，只看量级；结果记录在 [docs/benchmarks.md](docs/benchmarks.md) |
-| 流式 CPU 基准（真实窗口） | `tools/cpu-bench.sh [rid]` | NativeAOT 发布 `bench/StreamMark.CpuHarness` 并依次跑场景矩阵，结果追加到 `artifacts/cpu-bench.txt`；会打开窗口，运行期间保持可见。改动渲染、排版、节奏或会话面板后跑一次并与 [docs/benchmarks.md](docs/benchmarks.md) 对比 |
+| 流式 CPU 基准（真实窗口） | `[ROUNDS=n] tools/cpu-bench.sh [rid]` | NativeAOT 发布 `bench/StreamMark.CpuHarness`，把场景矩阵交错跑 n 轮（默认 3），每次运行与各场景有效轮次的中位数追加到 `artifacts/cpu-bench.txt`；会打开窗口，运行期间保持可见。窗口被遮挡时系统停止渲染、CPU 骤降，这样的运行标为 `INVALID` 且不计入中位数；跨轮次比较看 `cpu/frame`（每渲染一帧的进程 CPU）。改动渲染、排版、节奏或会话面板后跑一次并与 [docs/benchmarks.md](docs/benchmarks.md) 对比 |
 | 测试截图 | 图片写到 `STREAMMARK_SNAPSHOT_DIR`，未设置时用测试输出目录下的 `snapshots/` | 只用于人工查看，没有基线比对 |
 
 ## 架构与边界
