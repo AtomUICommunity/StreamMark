@@ -7,7 +7,7 @@ High-performance streaming Markdown rendering for [Avalonia](https://avaloniaui.
 - **Scientific content**: KaTeX-grade LaTeX via the [RaTeX](https://github.com/erweixin/RaTeX) engine, Mermaid diagrams, TextMate syntax highlighting.
 - **NativeAOT-safe**: zero trim/AOT warnings is a CI gate.
 
-> Status: 0.1.1, the first stable release — all plan milestones (M0–M7) implemented and integrated into TCode. See [docs/architecture.md](docs/architecture.md).
+> Status: 0.1.2, the first stable release — all plan milestones (M0–M7) implemented and integrated into TCode. See [docs/architecture.md](docs/architecture.md).
 
 ## Packages
 
@@ -38,10 +38,10 @@ Or in the project file:
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="TKCode.StreamMark.Avalonia" Version="0.1.1" />
-  <PackageReference Include="TKCode.StreamMark.Highlighting.TextMate" Version="0.1.1" />
-  <PackageReference Include="TKCode.StreamMark.RaTeX" Version="0.1.1" />
-  <PackageReference Include="TKCode.StreamMark.Mermaid" Version="0.1.1" />
+  <PackageReference Include="TKCode.StreamMark.Avalonia" Version="0.1.2" />
+  <PackageReference Include="TKCode.StreamMark.Highlighting.TextMate" Version="0.1.2" />
+  <PackageReference Include="TKCode.StreamMark.RaTeX" Version="0.1.2" />
+  <PackageReference Include="TKCode.StreamMark.Mermaid" Version="0.1.2" />
 </ItemGroup>
 ```
 

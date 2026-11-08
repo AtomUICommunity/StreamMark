@@ -7,7 +7,7 @@
         <Company>StreamMark</Company>
         <Product>StreamMark</Product>
         <Authors>StreamMark contributors</Authors>
-        <Version>0.1.1</Version>
+        <Version>0.1.2</Version>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <Description>High-performance streaming Markdown rendering for Avalonia.</Description>
         <!-- 裁剪 / AOT 相关警告一律视为错误：整个库必须 NativeAOT 安全 -->
