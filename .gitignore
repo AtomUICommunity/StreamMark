@@ -8,3 +8,4 @@ snapshots/
 native/ratex/target/
 artifacts/
 *.DotSettings.user
+.DS_Store
