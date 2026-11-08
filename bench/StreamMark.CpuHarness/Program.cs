@@ -28,7 +28,7 @@ namespace StreamMark.CpuHarness;
 /// SM_SAMPLE 样例文件（默认内嵌的 chat.md）；SM_RATE 字符/秒（默认 320）；SM_FADE_MS 渐显时长（0 关闭）；
 /// SM_SMOOTH 0 关闭平滑；SM_HISTORY 历史消息条数（默认 10）；SM_CLEAR 1 每轮清空会话（不滚动）；
 /// SM_IDLE 1 只测空闲；SM_GRADIENT 1 渐变窗口背景；SM_RENDER gl 在 macOS 上优先 OpenGL（默认 Metal）；
-/// SM_REGION 1 启用区域脏矩形（CompositionOptions.UseRegionDirtyRectClipping）；SM_STAY 1 结束后不退出。
+/// SM_REGION 1 启用区域脏矩形（CompositionOptions.UseRegionDirtyRectClipping）；SM_STAY 1 结束后不退出；SM_TOPMOST 0 不置顶（默认置顶）。
 /// <para>
 /// 进程 CPU 百分比取决于窗口实际渲染了多少帧：窗口被遮挡或最小化时系统停止驱动渲染，CPU 会掉到正常值的几分之一。
 /// 所以同时输出 frames（统计期间实际渲染的帧数）、fps、cpu/frame（每渲染一帧的进程 CPU 毫秒数，跨轮次可比），
@@ -98,6 +98,8 @@ public sealed class HarnessWindow : Window
         Title = "StreamMark CPU Harness";
         Width = 1100;
         Height = 800;
+        // 置顶，避免被其他窗口遮挡而停止呈现（遮挡时的运行会被判为 INVALID）
+        Topmost = Program.Env("SM_TOPMOST", "1") == "1";
         Background = Program.Env("SM_GRADIENT", "0") == "1"
             ? new RadialGradientBrush
             {
