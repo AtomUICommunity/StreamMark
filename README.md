@@ -76,7 +76,7 @@ The old and the new packages contain the same types, so remove every old referen
   `clr-namespace:StreamMark.Avalonia;assembly=TKCode.Arc.StreamMark`.
 - The AtomUI theme package has no successor. A host maps the `Md.*` resources onto its own tokens with
   `MarkdownResourceAlias` (after `StreamMarkTheme`); in an Arc app, `TKCode.Arc.Markdown` does this for Arc's tokens.
-- The new packages version with TKCode.Arc (`ArcVersion`), starting with 1.3.0-preview.1.
+- The new packages version with TKCode.Arc (`ArcVersion`), starting with 1.3.0-preview.2.
 
 The code that moved is this repository's last release, 0.1.2. Its history stays here; later changes are in
 TKCode.Arc's [CHANGELOG.md](https://github.com/AIDotNet/TKCode.Arc/blob/main/CHANGELOG.md).
